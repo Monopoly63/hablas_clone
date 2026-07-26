@@ -1,42 +1,30 @@
-import 'package:device_apps/device_apps.dart';
 import 'package:flutter/material.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_data.dart';
 import '../native_bridge/virtual_engine_bridge.dart';
 
 /// ─── App Discovery Service ──────────────────────────────────────────
 ///
-/// This service enumerates installed apps on the device using the
-/// `device_apps` Flutter package, which handles the QUERY_ALL_PACKAGES
-/// permission internally.
-///
-/// It also extracts app icons as raw bytes that can be displayed in
-/// Flutter via MemoryImage.
+/// Uses the `installed_apps` Flutter package to enumerate installed apps.
+/// This package is compatible with AGP 8.x and handles QUERY_ALL_PACKAGES.
 ///
 class AppDiscoveryService {
   /// Returns all user-installed apps on the device.
-  /// Uses device_apps package which handles permissions properly.
   Future<List<DiscoveredApp>> getInstalledApps() async {
     try {
-      // Get only user-installed apps (exclude system apps by default)
-      final apps = await DeviceApps.getInstalledApplications(
-        onlyAppsWithLaunchIntent: true,
-        includeSystemApps: false,
-        includeAppIcons: true, // CRITICAL: get icons!
-      );
+      final apps = await InstalledApps.getInstalledApps(true, true);
+      // true = include app icons, true = only apps with launch intent
 
-      return apps.map((app) {
-        // Convert device_apps Application to our DiscoveredApp model
-        return DiscoveredApp(
-          packageName: app.packageName,
-          appName: app.appName,
-          versionName: app.versionName,
-          isSystemApp: app.isSystemApp,
-          iconBytes: app.icon, // Uint8List? — raw PNG bytes
-          category: app.category?.toString(),
-        );
-      }).where((app) => app.packageName != 'com.hablas.studio') // Exclude self
-       .toList();
+      return apps
+          .where((app) => app.packageName != 'com.hablas.studio') // Exclude self
+          .map((app) => DiscoveredApp(
+        packageName: app.packageName!,
+        appName: app.name!,
+        versionName: app.versionName,
+        isSystemApp: false,
+        iconBytes: app.icon, // Uint8List? from installed_apps
+      )).toList();
     } catch (e) {
-      // If permission not granted, device_apps throws or returns empty
       return [];
     }
   }
@@ -44,20 +32,18 @@ class AppDiscoveryService {
   /// Returns ALL apps including system apps.
   Future<List<DiscoveredApp>> getAllApps() async {
     try {
-      final apps = await DeviceApps.getInstalledApplications(
-        onlyAppsWithLaunchIntent: true,
-        includeSystemApps: true,
-        includeAppIcons: true,
-      );
-      return apps.map((app) => DiscoveredApp(
-        packageName: app.packageName,
-        appName: app.appName,
+      final apps = await InstalledApps.getInstalledApps(true, false);
+      // true = include icons, false = include ALL apps (not just launchable)
+
+      return apps
+          .where((app) => app.packageName != 'com.hablas.studio')
+          .map((app) => DiscoveredApp(
+        packageName: app.packageName!,
+        appName: app.name!,
         versionName: app.versionName,
-        isSystemApp: app.isSystemApp,
+        isSystemApp: app.isSystemApp ?? false,
         iconBytes: app.icon,
-        category: app.category?.toString(),
-      )).where((app) => app.packageName != 'com.hablas.studio')
-       .toList();
+      )).toList();
     } catch (e) {
       return [];
     }
@@ -66,7 +52,7 @@ class AppDiscoveryService {
   /// Launches an app by package name.
   Future<bool> launchApp(String packageName) async {
     try {
-      return await DeviceApps.openApp(packageName);
+      return await InstalledApps.launchApp(packageName);
     } catch (e) {
       return false;
     }
@@ -79,7 +65,7 @@ class DiscoveredApp {
   final String appName;
   final String? versionName;
   final bool isSystemApp;
-  final Uint8List? iconBytes; // Raw PNG bytes from device_apps
+  final Uint8List? iconBytes;
   final String? category;
 
   const DiscoveredApp({
@@ -91,16 +77,13 @@ class DiscoveredApp {
     this.category,
   });
 
-  /// Whether this app icon can be displayed (has bytes).
   bool hasIcon => iconBytes != null && iconBytes!.isNotEmpty;
 
-  /// Creates an ImageProvider from icon bytes for Flutter display.
   MemoryImage? get iconImage {
     if (!hasIcon) return null;
     return MemoryImage(iconBytes!);
   }
 
-  /// Whether this is a popular clone target.
   bool get isPopularCloneTarget => _popularTargets.contains(packageName);
 
   @override
@@ -118,13 +101,11 @@ class DiscoveredApp {
     'org.telegram.plus',
     'com.instagram.android',
     'com.facebook.katana',
-    'com.facebook.lite',
     'com.twitter.android',
     'com.snapchat.android',
-    'com.zhiliaoapp.musically',
+    'com.discord',
     'com.viber.voip',
     'com.Slack',
-    'com.discord',
     'com.linkedin.android',
   };
 }

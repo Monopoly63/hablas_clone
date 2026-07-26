@@ -18,7 +18,7 @@ dependencies:
   permission_handler: ^11.3.1
 
   # App enumeration (CRITICAL — needed to list installed apps)
-  device_apps: ^2.2.0
+  installed_apps: ^1.5.1
 
   # Storage & Persistence
   hive: ^2.2.3
