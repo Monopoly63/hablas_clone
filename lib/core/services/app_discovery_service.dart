@@ -2,29 +2,20 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_data.dart';
-import '../native_bridge/virtual_engine_bridge.dart';
 
-/// ─── App Discovery Service ──────────────────────────────────────────
-///
-/// Uses the `installed_apps` Flutter package to enumerate installed apps.
-/// This package is compatible with AGP 8.x and handles QUERY_ALL_PACKAGES.
-///
+/// ─── App Discovery Service — uses installed_apps package ─────────────
 class AppDiscoveryService {
-  /// Returns all user-installed apps on the device.
+  /// Returns user-installed apps (excluding system apps).
   Future<List<DiscoveredApp>> getInstalledApps() async {
     try {
-      final apps = await InstalledApps.getInstalledApps(true, true);
-      // true = include app icons, true = only apps with launch intent
-
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: true,
+        withIcon: true,
+      );
       return apps
-          .where((app) => app.packageName != 'com.hablas.studio') // Exclude self
-          .map((app) => DiscoveredApp(
-        packageName: app.packageName!,
-        appName: app.name!,
-        versionName: app.versionName,
-        isSystemApp: false,
-        iconBytes: app.icon, // Uint8List? from installed_apps
-      )).toList();
+          .where((app) => app.packageName != 'com.hablas.studio')
+          .map((app) => _appInfoToDiscovered(app))
+          .toList();
     } catch (e) {
       return [];
     }
@@ -33,18 +24,14 @@ class AppDiscoveryService {
   /// Returns ALL apps including system apps.
   Future<List<DiscoveredApp>> getAllApps() async {
     try {
-      final apps = await InstalledApps.getInstalledApps(true, false);
-      // true = include icons, false = include ALL apps (not just launchable)
-
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        withIcon: true,
+      );
       return apps
           .where((app) => app.packageName != 'com.hablas.studio')
-          .map((app) => DiscoveredApp(
-        packageName: app.packageName!,
-        appName: app.name!,
-        versionName: app.versionName,
-        isSystemApp: app.isSystemApp ?? false,
-        iconBytes: app.icon,
-      )).toList();
+          .map((app) => _appInfoToDiscovered(app))
+          .toList();
     } catch (e) {
       return [];
     }
@@ -53,11 +40,22 @@ class AppDiscoveryService {
   /// Launches an app by package name.
   Future<bool> launchApp(String packageName) async {
     try {
-      await InstalledApps.launchApp(packageName);
+      await InstalledApps.startApp(packageName);
       return true;
     } catch (e) {
       return false;
     }
+  }
+
+  DiscoveredApp _appInfoToDiscovered(AppInfo app) {
+    return DiscoveredApp(
+      packageName: app.packageName,
+      appName: app.name,
+      versionName: app.versionName,
+      isSystemApp: app.isSystemApp,
+      iconBytes: app.icon, // Uint8List?
+      category: app.category.toString(),
+    );
   }
 }
 
@@ -100,14 +98,11 @@ class DiscoveredApp {
     'com.whatsapp',
     'com.whatsapp.w4b',
     'org.telegram.messenger',
-    'org.telegram.plus',
     'com.instagram.android',
     'com.facebook.katana',
     'com.twitter.android',
     'com.snapchat.android',
     'com.discord',
     'com.viber.voip',
-    'com.Slack',
-    'com.linkedin.android',
   };
 }
