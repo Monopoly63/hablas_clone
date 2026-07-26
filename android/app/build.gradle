@@ -51,9 +51,10 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Disable R8 minification for v1.0.0 — Play Core dependency issues with R8
+            // Will re-enable after adding play-core dependency
+            minifyEnabled false
+            shrinkResources false
         }
         debug {
             minifyEnabled false
