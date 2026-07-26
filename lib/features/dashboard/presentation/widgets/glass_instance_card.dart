@@ -34,7 +34,6 @@ class GlassInstanceCard extends StatelessWidget {
           borderRadius: 16,
           accentColor: _statusColor,
         ),
-        applyBlur: false,
         child: isCompact ? _buildCompactLayout() : _buildFullLayout(),
       ),
     );

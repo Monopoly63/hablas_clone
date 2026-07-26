@@ -371,7 +371,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       content: Text('Delete "${instance.customName}" permanently? Cannot undo.', style: AppTheme.body),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: AppTheme.bodySmall)),
-        TextButton(onPressed: () { context.read<DashboardBloc>().add(DeleteInstance(instance.id)); Navigator.pop(ctx); }, child: const Text('Delete', style: AppTheme.accentLabel.copyWith(color: AppTheme.neonPink))),
+        TextButton(onPressed: () { context.read<DashboardBloc>().add(DeleteInstance(instance.id)); Navigator.pop(ctx); }, child: Text('Delete', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.neonPink))),
       ],
     ));
   }
