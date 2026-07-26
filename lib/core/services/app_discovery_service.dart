@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_data.dart';
@@ -52,7 +53,8 @@ class AppDiscoveryService {
   /// Launches an app by package name.
   Future<bool> launchApp(String packageName) async {
     try {
-      return await InstalledApps.launchApp(packageName);
+      await InstalledApps.launchApp(packageName);
+      return true;
     } catch (e) {
       return false;
     }
