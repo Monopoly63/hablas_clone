@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/native_bridge/virtual_engine_bridge.dart';
@@ -35,7 +34,6 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
     try {
       final apps = await _repository.getInstalledApps();
       apps.sort((a, b) {
-        // Popular clone targets first
         if (a.isPopularCloneTarget && !b.isPopularCloneTarget) return -1;
         if (!a.isPopularCloneTarget && b.isPopularCloneTarget) return 1;
         return a.appName.toLowerCase().compareTo(b.appName.toLowerCase());
@@ -103,7 +101,6 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
       ),
       body: Column(
         children: [
-          // ─── Search Bar ─────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: TextField(
@@ -115,16 +112,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
               ),
             ),
           ),
-
-          // ─── Filter Toggle ──────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Text(
-                  '${_filteredApps.length} apps',
-                  style: AppTheme.bodySmall,
-                ),
+                Text('${_filteredApps.length} apps', style: AppTheme.bodySmall),
                 const Spacer(),
                 GestureDetector(
                   onTap: () => setState(() => _showSystemApps = !_showSystemApps),
@@ -159,8 +151,6 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // ─── App List ───────────────────────────────────────────────
           Expanded(
             child: _isLoading
                 ? _buildLoadingState()
@@ -175,10 +165,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
 
   Widget _buildLoadingState() {
     return Center(
-      child: CircularProgressIndicator(
-        color: AppTheme.liquidCyan,
-        strokeWidth: 2,
-      ),
+      child: CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2),
     );
   }
 
@@ -187,7 +174,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off_rounded, size: 48, color: const Color(0xFF666680)),
+          const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF666680)),
           const SizedBox(height: 12),
           Text('No apps found', style: AppTheme.bodySmall),
         ],
@@ -220,18 +207,13 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
         ),
         child: Row(
           children: [
-            // App icon placeholder
             Container(
               width: 44,
               height: 44,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                gradient: app.isPopularCloneTarget
-                    ? AppTheme.primaryGradient
-                    : null,
-                color: app.isPopularCloneTarget
-                    ? null
-                    : AppTheme.glassFill,
+                gradient: app.isPopularCloneTarget ? AppTheme.primaryGradient : null,
+                color: app.isPopularCloneTarget ? null : AppTheme.glassFill,
                 border: Border.all(
                   color: app.isPopularCloneTarget
                       ? AppTheme.liquidCyan.withOpacity(0.3)
@@ -241,9 +223,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
               ),
               child: Icon(
                 Icons.android_rounded,
-                color: app.isPopularCloneTarget
-                    ? AppTheme.oledBlack
-                    : const Color(0xFF888888),
+                color: app.isPopularCloneTarget ? AppTheme.oledBlack : const Color(0xFF888888),
                 size: 22,
               ),
             ),
@@ -268,7 +248,6 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                 ],
               ),
             ),
-            // Clone action
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(

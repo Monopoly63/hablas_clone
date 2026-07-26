@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../domain/virtual_instance.dart';
@@ -32,7 +33,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat();
-    context.read<DashboardBloc>().add(LoadDashboard());
   }
 
   @override
@@ -98,7 +98,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
         children: [
-          // Logo
           Container(
             width: 40,
             height: 40,
@@ -129,7 +128,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               ],
             ),
           ),
-          // Stats badge
           BlocBuilder<DashboardBloc, DashboardState>(
             builder: (context, state) {
               return Container(
@@ -141,7 +139,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.layers_rounded, size: 16, color: AppTheme.liquidCyan),
+                    const Icon(Icons.layers_rounded, size: 16, color: AppTheme.liquidCyan),
                     const SizedBox(width: 4),
                     Text(
                       '${state.totalInstanceCount}',
@@ -165,11 +163,9 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         if (state.isLoading) {
           return _buildLoadingState();
         }
-
         if (state.instances.isEmpty) {
           return _buildEmptyState();
         }
-
         return _buildInstanceGrid(state);
       },
     );
@@ -183,7 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           CircularProgressIndicator(
             color: AppTheme.liquidCyan,
             strokeWidth: 2,
-          ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 1.5.seconds),
+          ),
           const SizedBox(height: 16),
           Text('Loading instances...', style: AppTheme.bodySmall),
         ],
@@ -219,7 +215,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               ),
             ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
             const SizedBox(height: 24),
-            Text('No Virtual Instances Yet', style: AppTheme.heading2),
+            const Text('No Virtual Instances Yet', style: AppTheme.heading2),
             const SizedBox(height: 8),
             Text(
               'Tap the + button to clone your first app.\n'
@@ -256,7 +252,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.add_rounded, size: 16, color: AppTheme.liquidCyan),
+                const Icon(Icons.add_rounded, size: 16, color: AppTheme.liquidCyan),
                 const SizedBox(width: 4),
                 Text(app.$1, style: AppTheme.bodySmall.copyWith(color: AppTheme.liquidCyan)),
               ],
@@ -279,11 +275,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
         children: [
-          // ─── Stats Overview ──────────────────────────────────────────
           _buildStatsBar(state),
           const SizedBox(height: 20),
-
-          // ─── Instance Groups ─────────────────────────────────────────
           ...grouped.entries.map((entry) {
             return _buildAppGroup(
               packageName: entry.key,
@@ -354,7 +347,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Group header
         Row(
           children: [
             Text(
@@ -374,7 +366,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ],
         ),
         const SizedBox(height: 8),
-        // Instance cards
         ...instances.map((instance) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -456,7 +447,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 icon: Icons.edit_rounded,
                 label: 'Rename',
                 color: AppTheme.liquidCyan,
-                onTap: () => _showRenameDialog(instance),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showRenameDialog(instance);
+                },
               ),
               _buildActionTile(
                 icon: Icons.cleaning_services_outlined,
@@ -464,7 +458,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 color: AppTheme.cobaltBlue,
                 onTap: () {
                   Navigator.pop(context);
-                  // TODO: Clear cache via BLoC
                 },
               ),
               _buildActionTile(
@@ -473,7 +466,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 color: AppTheme.neonEmerald,
                 onTap: () {
                   Navigator.pop(context);
-                  // TODO: Shortcut creation
                 },
               ),
               _buildActionTile(
@@ -510,7 +502,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     final controller = TextEditingController(text: instance.customName);
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         return AlertDialog(
           backgroundColor: AppTheme.surfaceDark,
           title: Text('Rename Instance', style: AppTheme.heading3),
@@ -524,7 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx),
               child: Text('Cancel', style: AppTheme.bodySmall),
             ),
             TextButton(
@@ -532,7 +524,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 context.read<DashboardBloc>().add(
                   RenameInstance(instance.id, controller.text),
                 );
-                Navigator.pop(context);
+                Navigator.pop(ctx);
               },
               child: Text('Save', style: AppTheme.accentLabel),
             ),
@@ -545,10 +537,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   void _confirmDelete(VirtualInstance instance) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (ctx) {
         return AlertDialog(
           backgroundColor: AppTheme.surfaceDark,
-          title: Text('Delete Instance?', style: AppTheme.heading3.copyWith(color: AppTheme.neonPink)),
+          title: Text(
+            'Delete Instance?',
+            style: AppTheme.heading3.copyWith(color: AppTheme.neonPink),
+          ),
           content: Text(
             'This will permanently delete "${instance.customName}" and all its data. '
             'This action cannot be undone.',
@@ -556,15 +551,18 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx),
               child: Text('Cancel', style: AppTheme.bodySmall),
             ),
             TextButton(
               onPressed: () {
-                this.context.read<DashboardBloc>().add(DeleteInstance(instance.id));
-                Navigator.pop(context);
+                context.read<DashboardBloc>().add(DeleteInstance(instance.id));
+                Navigator.pop(ctx);
               },
-              child: Text('Delete', style: AppTheme.accentLabel.copyWith(color: AppTheme.neonPink)),
+              child: Text(
+                'Delete',
+                style: AppTheme.accentLabel.copyWith(color: AppTheme.neonPink),
+              ),
             ),
           ],
         );
@@ -580,18 +578,23 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 }
 
-// ─── AnimatedBuilder shorthand ────────────────────────────────────────
-class AnimatedBuilder extends AnimatedWidget {
+/// ─── AnimatedBuilder helper ──────────────────────────────────────────
+/// Custom AnimatedWidget that delegates building to a callback.
+class _AnimatedBuilder extends AnimatedWidget {
   final Widget Function(BuildContext context, Widget? child) builder;
+  final Widget? child;
 
-  const AnimatedBuilder({
-    super.key,
+  const _AnimatedBuilder({
     required super.listenable,
     required this.builder,
+    this.child,
   });
 
   @override
   Widget build(BuildContext context) {
-    return builder(context, null);
+    return builder(context, child);
   }
 }
+
+/// Re-export AnimatedBuilder with private implementation
+typedef AnimatedBuilder = _AnimatedBuilder;

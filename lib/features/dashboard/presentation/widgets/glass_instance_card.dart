@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../domain/virtual_instance.dart';
@@ -38,9 +37,7 @@ class GlassInstanceCard extends StatelessWidget {
         applyBlur: false,
         child: isCompact ? _buildCompactLayout() : _buildFullLayout(),
       ),
-    )
-    .animate(target: instance.status == InstanceStatus.running ? 1.0 : 0.0)
-    .shimmer(duration: 2.seconds, color: _statusColor.withOpacity(0.05));
+    );
   }
 
   Widget _buildFullLayout() {

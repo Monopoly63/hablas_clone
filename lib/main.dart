@@ -58,32 +58,9 @@ class HablasVirtualStudio extends StatelessWidget {
           title: 'Hablas Virtual Studio',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.buildDarkTheme(),
-          home: const _AppEntry(),
+          home: const DashboardScreen(),
         ),
       ),
     );
-  }
-}
-
-class _AppEntry extends StatefulWidget {
-  const _AppEntry();
-
-  @override
-  State<_AppEntry> createState() => _AppEntryState();
-}
-
-class _AppEntryState extends State<_AppEntry> {
-  @override
-  void initState() {
-    super.initState();
-    // Trigger initial data load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<DashboardBloc>().add(LoadDashboard());
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const DashboardScreen();
   }
 }
