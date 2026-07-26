@@ -18,9 +18,8 @@ class VirtualEngineBridge {
   // ─── App Discovery ──────────────────────────────────────────────────
 
   /// Scans the device for cloneable installed applications.
-  /// Returns a list of maps containing package metadata:
-  ///   { packageName, appName, iconPath, versionName, isSystemApp }
-  static Future<List<InstalledAppInfo>> getSystemInstalledApps() async {
+  /// Returns a list of maps containing package metadata.
+  Future<List<InstalledAppInfo>> getSystemInstalledApps() async {
     try {
       final List<dynamic> result = await _channel.invokeMethod(
         'getSystemInstalledApps',
@@ -36,7 +35,7 @@ class VirtualEngineBridge {
 
   /// Creates a new isolated virtual instance for a given package.
   /// Returns the instance ID (int) assigned by the engine.
-  static Future<int> createVirtualInstance(String packageName) async {
+  Future<int> createVirtualInstance(String packageName) async {
     try {
       final int instanceId = await _channel.invokeMethod(
         'createVirtualInstance',
@@ -50,7 +49,7 @@ class VirtualEngineBridge {
   }
 
   /// Launches a virtual instance inside its sandbox container.
-  static Future<bool> launchVirtualInstance(String packageName, int instanceId) async {
+  Future<bool> launchVirtualInstance(String packageName, int instanceId) async {
     try {
       final bool success = await _channel.invokeMethod(
         'launchVirtualInstance',
@@ -64,7 +63,7 @@ class VirtualEngineBridge {
   }
 
   /// Safely terminates a virtual instance, flushing data before shutdown.
-  static Future<bool> terminateVirtualInstance(String packageName, int instanceId) async {
+  Future<bool> terminateVirtualInstance(String packageName, int instanceId) async {
     try {
       final bool success = await _channel.invokeMethod(
         'terminateVirtualInstance',
@@ -80,7 +79,7 @@ class VirtualEngineBridge {
   // ─── Storage Management ─────────────────────────────────────────────
 
   /// Returns current disk usage for a specific instance.
-  static Future<int> getVirtualInstanceStorageSize(String packageName, int instanceId) async {
+  Future<int> getVirtualInstanceStorageSize(String packageName, int instanceId) async {
     try {
       final int sizeBytes = await _channel.invokeMethod(
         'getVirtualInstanceStorageSize',
@@ -94,7 +93,7 @@ class VirtualEngineBridge {
   }
 
   /// Clears instance cache without affecting active session data.
-  static Future<bool> clearInstanceCache(String packageName, int instanceId) async {
+  Future<bool> clearInstanceCache(String packageName, int instanceId) async {
     try {
       final bool success = await _channel.invokeMethod(
         'clearInstanceCache',
@@ -110,7 +109,7 @@ class VirtualEngineBridge {
   // ─── Bulk Operations ────────────────────────────────────────────────
 
   /// Returns all active virtual instances across all packages.
-  static Future<List<VirtualInstanceInfo>> getAllInstances() async {
+  Future<List<VirtualInstanceInfo>> getAllInstances() async {
     try {
       final List<dynamic> result = await _channel.invokeMethod('getAllInstances');
       return result.map((item) => VirtualInstanceInfo.fromMap(item as Map<String, dynamic>)).toList();
@@ -121,7 +120,7 @@ class VirtualEngineBridge {
   }
 
   /// Deletes an instance and all its sandbox data permanently.
-  static Future<bool> deleteVirtualInstance(String packageName, int instanceId) async {
+  Future<bool> deleteVirtualInstance(String packageName, int instanceId) async {
     try {
       final bool success = await _channel.invokeMethod(
         'deleteVirtualInstance',

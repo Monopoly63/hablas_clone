@@ -17,8 +17,8 @@ void main() async {
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       statusBarBrightness: Brightness.dark,
-      navigationBarColor: AppTheme.oledBlack,
-      navigationBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: AppTheme.oledBlack,
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 

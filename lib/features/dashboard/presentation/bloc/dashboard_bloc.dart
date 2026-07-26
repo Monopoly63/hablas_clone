@@ -68,11 +68,11 @@ class DashboardState extends Equatable {
   final String? error;
   final Map<String, int> totalStorageByApp; // package → total bytes
 
-  const DashboardState({
-    this.instances = [],
+  DashboardState({
+    this.instances = const [],
     this.isLoading = false,
     this.error,
-    this.totalStorageByApp = {},
+    this.totalStorageByApp = const {},
   });
 
   DashboardState copyWith({
