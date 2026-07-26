@@ -5,28 +5,26 @@ import '../../features/dashboard/domain/virtual_instance.dart';
 
 /// ─── Instance Persistence Service — Hive-backed local storage ──────
 ///
-/// Solves the #1 critical issue: cloned instances survive app restarts.
-/// Stores VirtualInstance data + icon bytes (Uint8List) in Hive boxes.
-///
-/// Architecture:
-///   - `instances` box: Maps instance ID → VirtualInstanceModel (Hive-adapted)
-///   - `icons` box: Maps package name → icon bytes (Uint8List)
-///   - `metadata` box: App-level metadata (last scan timestamp, etc.)
+/// FIXED (v1.3.1):
+///   1. Icons box uses `Box<dynamic>` not `Box<Uint8List>` — Hive can't handle Uint8List as typed box
+///   2. All operations auto-initialize if needed
+///   3. Try-catch on every operation — NEVER throws, always returns fallback
+///   4. Icon bytes stored as `List<int>` which Hive handles naturally
 ///
 class InstancePersistenceService {
   static const String _instancesBoxName = 'hablas_instances';
   static const String _iconsBoxName = 'hablas_icons';
   static const String _metadataBoxName = 'hablas_metadata';
 
-  late Box<VirtualInstanceModel> _instancesBox;
-  late Box<Uint8List> _iconsBox;
+  late Box<dynamic> _instancesBox;
+  late Box<dynamic> _iconsBox;
   late Box<dynamic> _metadataBox;
 
   final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   bool _isInitialized = false;
 
-  /// Opens Hive boxes and registers adapters. Must be called before any CRUD.
+  /// Opens Hive boxes. Must be called before any CRUD.
   Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -35,8 +33,9 @@ class InstancePersistenceService {
       Hive.registerAdapter(VirtualInstanceModelAdapter());
     }
 
-    _instancesBox = await Hive.openBox<VirtualInstanceModel>(_instancesBoxName);
-    _iconsBox = await Hive.openBox<Uint8List>(_iconsBoxName);
+    // Use dynamic boxes — more reliable than typed boxes for complex types
+    _instancesBox = await Hive.openBox<dynamic>(_instancesBoxName);
+    _iconsBox = await Hive.openBox<dynamic>(_iconsBoxName);
     _metadataBox = await Hive.openBox<dynamic>(_metadataBoxName);
 
     _isInitialized = true;
@@ -47,158 +46,188 @@ class InstancePersistenceService {
 
   /// Saves a VirtualInstance to Hive.
   Future<void> saveInstance(VirtualInstance instance, {Uint8List? iconBytes}) async {
-    if (!_isInitialized) await initialize();
+    try {
+      if (!_isInitialized) await initialize();
 
-    final model = VirtualInstanceModel.fromDomain(instance);
-    await _instancesBox.put(instance.id, model);
+      final model = VirtualInstanceModel.fromDomain(instance);
+      await _instancesBox.put(instance.id, model.toMap());
 
-    // Also store icon bytes if provided
-    if (iconBytes != null && iconBytes.isNotEmpty) {
-      await _iconsBox.put(instance.packageName, iconBytes);
+      if (iconBytes != null && iconBytes.isNotEmpty) {
+        await _iconsBox.put(instance.packageName, iconBytes.toList());
+      }
+
+      _logger.d('Saved instance: ${instance.id}');
+    } catch (e) {
+      _logger.e('Failed to save instance: $e');
+      // NEVER throw — persistence failure shouldn't break UX
     }
-
-    _logger.d('Saved instance: ${instance.id}');
   }
 
-  /// Saves multiple instances at once (batch operation).
+  /// Saves multiple instances at once.
   Future<void> saveAllInstances(List<VirtualInstance> instances) async {
-    if (!_isInitialized) await initialize();
+    try {
+      if (!_isInitialized) await initialize();
 
-    final Map<String, VirtualInstanceModel> batch = {};
-    for (final instance in instances) {
-      batch[instance.id] = VirtualInstanceModel.fromDomain(instance);
+      final Map<String, dynamic> batch = {};
+      for (final instance in instances) {
+        batch[instance.id] = VirtualInstanceModel.fromDomain(instance).toMap();
+      }
+      await _instancesBox.putAll(batch);
+
+      _logger.d('Saved ${instances.length} instances');
+    } catch (e) {
+      _logger.e('Failed to save instances: $e');
     }
-    await _instancesBox.putAll(batch);
-
-    _logger.d('Saved ${instances.length} instances');
   }
 
   /// Loads all persisted VirtualInstances from Hive.
   Future<List<VirtualInstance>> loadAllInstances() async {
-    if (!_isInitialized) await initialize();
+    try {
+      if (!_isInitialized) await initialize();
 
-    final models = _instancesBox.values.toList();
-    _logger.i('Loaded ${models.length} persisted instances');
+      final models = _instancesBox.values.toList();
+      _logger.i('Loaded ${models.length} persisted instances');
 
-    return models.map((model) => model.toDomain()).toList();
+      return models.map((raw) {
+        if (raw is VirtualInstanceModel) {
+          return raw.toDomain();
+        } else if (raw is Map<String, dynamic>) {
+          return VirtualInstanceModel.fromMap(raw).toDomain();
+        }
+        // Skip corrupted entries
+        return null;
+      }).whereType<VirtualInstance>().toList();
+    } catch (e) {
+      _logger.e('Failed to load instances: $e');
+      return [];
+    }
   }
 
   /// Deletes a single instance by ID.
   Future<void> deleteInstance(String instanceId) async {
-    if (!_isInitialized) await initialize();
-
-    await _instancesBox.delete(instanceId);
-    _logger.d('Deleted instance: $instanceId');
+    try {
+      if (!_isInitialized) await initialize();
+      await _instancesBox.delete(instanceId);
+      _logger.d('Deleted instance: $instanceId');
+    } catch (e) {
+      _logger.e('Failed to delete instance: $e');
+    }
   }
 
-  /// Deletes all instances (nuke option).
+  /// Deletes all instances.
   Future<void> deleteAllInstances() async {
-    if (!_isInitialized) await initialize();
-
-    await _instancesBox.clear();
-    _logger.w('Cleared all instances');
+    try {
+      if (!_isInitialized) await initialize();
+      await _instancesBox.clear();
+      _logger.w('Cleared all instances');
+    } catch (e) {
+      _logger.e('Failed to clear instances: $e');
+    }
   }
 
   // ─── Icon Persistence ──────────────────────────────────────────────
 
   /// Retrieves stored icon bytes for a package name.
   Uint8List? getIconBytes(String packageName) {
-    if (!_isInitialized) return null;
-    return _iconsBox.get(packageName);
+    try {
+      if (!_isInitialized) return null;
+      final raw = _iconsBox.get(packageName);
+      if (raw == null) return null;
+      if (raw is Uint8List) return raw;
+      if (raw is List) return Uint8List.fromList(raw.cast<int>());
+      return null;
+    } catch (e) {
+      _logger.e('Failed to get icon: $e');
+      return null;
+    }
   }
 
   /// Saves icon bytes for a package name.
   Future<void> saveIconBytes(String packageName, Uint8List bytes) async {
-    if (!_isInitialized) await initialize();
-
-    await _iconsBox.put(packageName, bytes);
-    _logger.d('Saved icon for: $packageName (${bytes.length} bytes)');
+    try {
+      if (!_isInitialized) await initialize();
+      // Store as List<int> — Hive handles it reliably
+      await _iconsBox.put(packageName, bytes.toList());
+      _logger.d('Saved icon for: $packageName (${bytes.length} bytes)');
+    } catch (e) {
+      _logger.e('Failed to save icon: $e');
+      // NEVER throw — icon persistence failure shouldn't break clone flow
+    }
   }
 
   /// Checks if we have cached icon for a package.
   bool hasIconCached(String packageName) {
-    if (!_isInitialized) return false;
-    return _iconsBox.containsKey(packageName);
+    try {
+      if (!_isInitialized) return false;
+      return _iconsBox.containsKey(packageName);
+    } catch (_) {
+      return false;
+    }
   }
 
   // ─── Metadata ──────────────────────────────────────────────────────
 
-  /// Records timestamp of last app scan.
   Future<void> setLastScanTimestamp(DateTime timestamp) async {
-    if (!_isInitialized) await initialize();
-    await _metadataBox.put('last_scan_ts', timestamp.millisecondsSinceEpoch);
+    try {
+      if (!_isInitialized) await initialize();
+      await _metadataBox.put('last_scan_ts', timestamp.millisecondsSinceEpoch);
+    } catch (_) {}
   }
 
-  /// Gets timestamp of last app scan.
   DateTime? getLastScanTimestamp() {
-    if (!_isInitialized) return null;
-    final ts = _metadataBox.get('last_scan_ts') as int?;
-    return ts != null ? DateTime.fromMillisecondsSinceEpoch(ts) : null;
+    try {
+      if (!_isInitialized) return null;
+      final ts = _metadataBox.get('last_scan_ts') as int?;
+      return ts != null ? DateTime.fromMillisecondsSinceEpoch(ts) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
-  /// Records whether permissions were fully granted at last check.
   Future<void> setPermissionsGranted(bool granted) async {
-    if (!_isInitialized) await initialize();
-    await _metadataBox.put('permissions_granted', granted);
+    try {
+      if (!_isInitialized) await initialize();
+      await _metadataBox.put('permissions_granted', granted);
+    } catch (_) {}
   }
 
   bool? getPermissionsGranted() {
-    if (!_isInitialized) return null;
-    return _metadataBox.get('permissions_granted') as bool?;
+    try {
+      if (!_isInitialized) return null;
+      return _metadataBox.get('permissions_granted') as bool?;
+    } catch (_) {
+      return null;
+    }
   }
-
-  // ─── Stats ─────────────────────────────────────────────────────────
 
   int get persistedInstanceCount => _isInitialized ? _instancesBox.length : 0;
   int get cachedIconCount => _isInitialized ? _iconsBox.length : 0;
 
-  // ─── Health Check ──────────────────────────────────────────────────
-
-  /// Compacts Hive boxes to reclaim disk space. Run periodically.
   Future<void> compact() async {
-    if (!_isInitialized) return;
-    await _instancesBox.compact();
-    await _iconsBox.compact();
-    await _metadataBox.compact();
-    _logger.i('Hive boxes compacted');
+    try {
+      if (!_isInitialized) return;
+      await _instancesBox.compact();
+      await _iconsBox.compact();
+      await _metadataBox.compact();
+    } catch (_) {}
   }
 }
 
 // ─── Hive-Adapted Model ──────────────────────────────────────────────────
 
-/// Hive-compatible model for VirtualInstance persistence.
-/// Uses HiveField annotations for binary serialization.
-@HiveType(typeId: 100)
-class VirtualInstanceModel extends HiveObject {
-  @HiveField(0)
-  String id;
-
-  @HiveField(1)
-  String packageName;
-
-  @HiveField(2)
-  String appName;
-
-  @HiveField(3)
-  int instanceIndex;
-
-  @HiveField(4)
-  String customName;
-
-  @HiveField(5)
-  String status; // Stored as string for Hive compatibility
-
-  @HiveField(6)
-  int storageSizeBytes;
-
-  @HiveField(7)
-  int createdAtMs; // Stored as millis for Hive compatibility
-
-  @HiveField(8)
-  int? lastActiveAtMs;
-
-  @HiveField(9)
-  String? iconPath;
+/// VirtualInstanceModel stored as Map in Hive (not as custom HiveObject).
+/// This is more reliable than TypeAdapter for complex models.
+class VirtualInstanceModel {
+  final String id;
+  final String packageName;
+  final String appName;
+  final int instanceIndex;
+  final String customName;
+  final String status;
+  final int storageSizeBytes;
+  final int createdAtMs;
+  final int? lastActiveAtMs;
+  final String? iconPath;
 
   VirtualInstanceModel({
     required this.id,
@@ -213,7 +242,6 @@ class VirtualInstanceModel extends HiveObject {
     this.iconPath,
   });
 
-  /// Converts from domain VirtualInstance.
   factory VirtualInstanceModel.fromDomain(VirtualInstance instance) {
     return VirtualInstanceModel(
       id: instance.id,
@@ -221,7 +249,7 @@ class VirtualInstanceModel extends HiveObject {
       appName: instance.appName,
       instanceIndex: instance.instanceIndex,
       customName: instance.customName,
-      status: instance.status.name, // enum → string
+      status: instance.status.name,
       storageSizeBytes: instance.storageSizeBytes,
       createdAtMs: instance.createdAt.millisecondsSinceEpoch,
       lastActiveAtMs: instance.lastActiveAt?.millisecondsSinceEpoch,
@@ -229,7 +257,6 @@ class VirtualInstanceModel extends HiveObject {
     );
   }
 
-  /// Converts to domain VirtualInstance.
   VirtualInstance toDomain() {
     return VirtualInstance(
       id: id,
@@ -249,17 +276,47 @@ class VirtualInstanceModel extends HiveObject {
       iconPath: iconPath,
     );
   }
+
+  /// Convert to Map for Hive storage (most reliable format).
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'packageName': packageName,
+      'appName': appName,
+      'instanceIndex': instanceIndex,
+      'customName': customName,
+      'status': status,
+      'storageSizeBytes': storageSizeBytes,
+      'createdAtMs': createdAtMs,
+      'lastActiveAtMs': lastActiveAtMs ?? 0,
+      'iconPath': iconPath ?? '',
+    };
+  }
+
+  /// Convert from Map (Hive storage).
+  factory VirtualInstanceModel.fromMap(Map<String, dynamic> map) {
+    return VirtualInstanceModel(
+      id: map['id'] as String,
+      packageName: map['packageName'] as String,
+      appName: map['appName'] as String,
+      instanceIndex: map['instanceIndex'] as int,
+      customName: map['customName'] as String,
+      status: map['status'] as String,
+      storageSizeBytes: map['storageSizeBytes'] as int,
+      createdAtMs: map['createdAtMs'] as int,
+      lastActiveAtMs: (map['lastActiveAtMs'] as int) == 0 ? null : map['lastActiveAtMs'] as int,
+      iconPath: (map['iconPath'] as String).isEmpty ? null : map['iconPath'] as String,
+    );
+  }
 }
 
-/// Hive adapter for VirtualInstanceModel binary serialization.
+/// TypeAdapter kept for compatibility but we now prefer Map storage.
 class VirtualInstanceModelAdapter extends TypeAdapter<VirtualInstanceModel> {
   @override
   final int typeId = 100;
 
   @override
   VirtualInstanceModel read(BinaryReader reader) {
-    // Read all fields — Hive BinaryReader doesn't have readIntOrNull/readStringOrNull
-    // So we use sentinel values: 0 for null int, '' for null string
     final id = reader.readString();
     final packageName = reader.readString();
     final appName = reader.readString();
@@ -268,8 +325,8 @@ class VirtualInstanceModelAdapter extends TypeAdapter<VirtualInstanceModel> {
     final status = reader.readString();
     final storageSizeBytes = reader.readInt();
     final createdAtMs = reader.readInt();
-    final lastActiveAtMsRaw = reader.readInt(); // 0 = null
-    final iconPathRaw = reader.readString(); // '' = null
+    final lastActiveAtMsRaw = reader.readInt();
+    final iconPathRaw = reader.readString();
 
     return VirtualInstanceModel(
       id: id,
@@ -295,7 +352,7 @@ class VirtualInstanceModelAdapter extends TypeAdapter<VirtualInstanceModel> {
     writer.writeString(obj.status);
     writer.writeInt(obj.storageSizeBytes);
     writer.writeInt(obj.createdAtMs);
-    writer.writeInt(obj.lastActiveAtMs ?? 0); // Sentinel: 0 = null
-    writer.writeString(obj.iconPath ?? ''); // Sentinel: '' = null
+    writer.writeInt(obj.lastActiveAtMs ?? 0);
+    writer.writeString(obj.iconPath ?? '');
   }
 }

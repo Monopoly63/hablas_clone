@@ -341,19 +341,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
 
-    if (result != null && result is Map<String, dynamic> && mounted) {
-      // Store icon bytes if returned from picker
-      final iconBytes = result['iconBytes'] as Uint8List?;
-      if (iconBytes != null && iconBytes.isNotEmpty) {
-        final persistence = context.read<InstancePersistenceService>();
-        await persistence.saveIconBytes(result['packageName'] as String, iconBytes);
+    if (mounted && result != null) {
+      // Safely extract data — handle any type
+      String packageName = '';
+      String appName = '';
+      int instanceId = DateTime.now().millisecondsSinceEpoch % 100000;
+
+      if (result is Map) {
+        packageName = result['packageName']?.toString() ?? '';
+        appName = result['appName']?.toString() ?? packageName.split('.').last;
+        final rawId = result['instanceId'];
+        if (rawId is int) {
+          instanceId = rawId;
+        } else if (rawId != null) {
+          instanceId = int.tryParse(rawId.toString()) ?? instanceId;
+        }
+
+        // Store icon bytes if available
+        final rawIcon = result['iconBytes'];
+        if (rawIcon is Uint8List && rawIcon.isNotEmpty) {
+          try {
+            final persistence = context.read<InstancePersistenceService>();
+            await persistence.saveIconBytes(packageName, rawIcon);
+          } catch (_) {
+            // Icon persistence failed — clone still works
+          }
+        }
       }
 
-      context.read<DashboardBloc>().add(AppAddedFromPicker(
-        packageName: result['packageName'] as String,
-        appName: result['appName'] as String,
-        instanceId: result['instanceId'] as int,
-      ));
+      if (packageName.isNotEmpty) {
+        context.read<DashboardBloc>().add(AppAddedFromPicker(
+          packageName: packageName,
+          appName: appName,
+          instanceId: instanceId,
+        ));
+      }
     }
   }
 
