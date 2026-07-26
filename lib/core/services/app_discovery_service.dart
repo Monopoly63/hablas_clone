@@ -72,7 +72,7 @@ class DiscoveredApp {
     this.category,
   });
 
-  bool hasIcon => iconBytes != null && iconBytes!.isNotEmpty;
+  bool get hasIcon => iconBytes != null && iconBytes!.isNotEmpty;
   MemoryImage? get iconImage => hasIcon ? MemoryImage(iconBytes!) : null;
   bool get isPopularCloneTarget => _popularTargets.contains(packageName);
 
