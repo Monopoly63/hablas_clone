@@ -1,36 +1,4 @@
 pluginManagement {
-    def flutterSdkPath = {
-        def properties = new Properties()
-        def localPropertiesFile = rootProject.file('local.properties')
-        if (localPropertiesFile.exists()) {
-            localPropertiesFile.withReader('UTF-8') { reader -> properties.load(reader) }
-        }
-        def flutterSdkPath = properties.getProperty('flutter.sdk')
-        if (flutterSdkPath == null) {
-            flutterSdkPath = System.getenv('FLUTTER_ROOT')
-        }
-        if (flutterSdkPath == null) {
-            // Try common locations
-            def possiblePaths = [
-                '/usr/lib/flutter',
-                '/opt/flutter',
-                "${System.getenv('HOME')}/flutter",
-                "${System.getenv('HOME')}/development/flutter",
-            ]
-            for (path in possiblePaths) {
-                if (new File(path).exists()) {
-                    flutterSdkPath = path
-                    break
-                }
-            }
-        }
-        assert flutterSdkPath != null : "flutter.sdk not set in local.properties and FLUTTER_ROOT env var not set"
-        return flutterSdkPath
-    }
-    settings()
-
-    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
-
     repositories {
         google()
         mavenCentral()

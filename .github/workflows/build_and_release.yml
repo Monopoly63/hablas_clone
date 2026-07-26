@@ -27,6 +27,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Verify Flutter Installation
+        run: flutter doctor -v
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -34,12 +37,11 @@ jobs:
         run: flutter test
         continue-on-error: true
 
-      - name: Build APK (Release)
+      - name: Build Release APK
         run: flutter build apk --release
 
-      - name: Build APK (Split per ABI)
-        run: flutter build apk --release --split-per-abi
-        continue-on-error: true
+      - name: List Build Artifacts
+        run: ls -la build/app/outputs/flutter-apk/
 
       - name: Generate Release Notes
         id: release_notes
@@ -61,13 +63,13 @@ jobs:
           echo "- PackageManagerHook & ActivityManagerHook scaffolding" >> release_notes.md
           echo "" >> release_notes.md
           echo "---" >> release_notes.md
-          echo "*Built with ❤️ by Hablas Studio Team*" >> release_notes.md
+          echo "*Built with 💎 Liquid Glass · Powered by ⚡ Virtual Engine · Crafted with ❤️*" >> release_notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_notes.md
           files: |
-            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

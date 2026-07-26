@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:hablas_virtual_studio/core/constants/app_constants.dart';
 import 'package:hablas_virtual_studio/core/theme/app_theme.dart';
+import 'package:hablas_virtual_studio/core/native_bridge/virtual_engine_bridge.dart';
 
 void main() {
   group('AppConstants', () {
@@ -16,7 +18,7 @@ void main() {
       expect(AppConstants.version, '1.0.0');
     });
 
-    test('sandboxBasePath should be valid', () {
+    test('sandboxBasePath should contain com.hablas.studio', () {
       expect(AppConstants.sandboxBasePath, contains('com.hablas.studio'));
     });
 
@@ -75,6 +77,28 @@ void main() {
       expect(InstanceStatus.idle.toDisplayString(), 'Idle');
       expect(InstanceStatus.sleeping.toDisplayString(), 'Sleeping');
       expect(InstanceStatus.error.toDisplayString(), 'Error');
+    });
+  });
+
+  group('InstalledAppInfo', () {
+    test('should create from map', () {
+      final map = {
+        'packageName': 'com.whatsapp',
+        'appName': 'WhatsApp',
+        'iconPath': null,
+        'versionName': '2.23',
+        'isSystemApp': false,
+      };
+      final info = InstalledAppInfo.fromMap(map);
+      expect(info.packageName, 'com.whatsapp');
+      expect(info.appName, 'WhatsApp');
+      expect(info.isSystemApp, false);
+    });
+
+    test('equality should be based on packageName', () {
+      const info1 = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WhatsApp');
+      const info2 = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WhatsApp Messenger');
+      expect(info1, equals(info2));
     });
   });
 }
