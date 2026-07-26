@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/native_bridge/virtual_engine_bridge.dart';
+import 'core/permissions/permission_gate.dart';
 import 'features/app_picker/domain/app_picker_repository.dart';
 import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'features/dashboard/presentation/screens/dashboard_screen.dart';
@@ -11,7 +12,6 @@ import 'features/dashboard/presentation/screens/dashboard_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ─── 120fps: System UI Configuration ───────────────────────────────
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,13 +22,11 @@ void main() async {
     ),
   );
 
-  // Enable smooth animations at high FPS
-  SystemChrome.setPreferredOrientations([
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // ─── Initialize Hive for persistence ────────────────────────────────
   await Hive.initFlutter();
 
   runApp(const HablasVirtualStudio());
@@ -52,11 +50,32 @@ class HablasVirtualStudio extends StatelessWidget {
           title: 'Hablas Clone',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.buildDarkTheme(),
-          // 120fps: Reduce animation durations for snappier feel
-          themeMode: ThemeMode.dark,
-          home: const DashboardScreen(),
+          home: _AppEntry(),
         ),
       ),
+    );
+  }
+}
+
+/// Entry point — shows PermissionGate first, then Dashboard
+class _AppEntry extends StatefulWidget {
+  @override
+  State<_AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends State<_AppEntry> {
+  bool _permissionsGranted = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_permissionsGranted) {
+      return const DashboardScreen();
+    }
+    return PermissionGate(
+      onGranted: () {
+        setState(() => _permissionsGranted = true);
+        context.read<DashboardBloc>().add(LoadDashboard());
+      },
     );
   }
 }

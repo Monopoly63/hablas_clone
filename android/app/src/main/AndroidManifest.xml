@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ─── Core Permissions ────────────────────────────────────────── -->
+    <!-- ─── CRITICAL Permissions ──────────────────────────────────── -->
+    <!-- QUERY_ALL_PACKAGES: Required to enumerate installed apps -->
+    <!-- On Android 11+ this is the KEY permission for our app -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <!-- ─── Core Permissions ─────────────────────────────────────── -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -9,14 +14,18 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INSTALL_SHORTCUT" />
     <uses-permission android:name="android.permission.UNINSTALL_SHORTCUT" />
 
+    <!-- ─── Storage (for saving clone data) ──────────────────────── -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <application
-        android:label="Hablas Studio"
+        android:label="Hablas Clone"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
@@ -25,7 +34,6 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.HablasStudio">
 
-        <!-- ─── Main Activity ──────────────────────────────────────── -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -46,12 +54,10 @@
             </intent-filter>
         </activity>
 
-        <!-- ─── Flutter Metadata ───────────────────────────────────── -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- ─── File Provider for sharing ──────────────────────────── -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
+import '../../../../core/services/app_discovery_service.dart';
 import '../../../../core/native_bridge/virtual_engine_bridge.dart';
-import '../../domain/installed_app.dart';
-import '../../domain/app_picker_repository.dart';
 
-/// App Picker Screen — Searchable list of installed apps with
-/// instant cloning support. Features Liquid Glass card design.
+/// ─── App Picker Screen — Shows REAL installed apps with icons ────────
+///
+/// Uses AppDiscoveryService (device_apps package) to enumerate
+/// installed apps on the device, including their actual icons.
+///
 class AppPickerScreen extends StatefulWidget {
   const AppPickerScreen({super.key});
 
@@ -15,43 +17,57 @@ class AppPickerScreen extends StatefulWidget {
 }
 
 class _AppPickerScreenState extends State<AppPickerScreen> {
-  late final AppPickerRepository _repository;
-  List<InstalledApp> _allApps = [];
-  List<InstalledApp> _filteredApps = [];
+  final AppDiscoveryService _discovery = AppDiscoveryService();
+  final VirtualEngineBridge _engine = VirtualEngineBridge();
+
+  List<DiscoveredApp> _allApps = [];
+  List<DiscoveredApp> _filteredApps = [];
   bool _isLoading = true;
   String _searchQuery = '';
   bool _showSystemApps = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _repository = AppPickerRepository(engine: VirtualEngineBridge());
     _loadApps();
   }
 
   Future<void> _loadApps() async {
-    setState(() => _isLoading = true);
+    setState(() { _isLoading = true; _error = null; });
     try {
-      final apps = await _repository.getInstalledApps();
+      final apps = _showSystemApps
+          ? await _discovery.getAllApps()
+          : await _discovery.getInstalledApps();
+
+      if (apps.isEmpty) {
+        // Permission likely not granted
+        setState(() {
+          _allApps = [];
+          _filteredApps = [];
+          _isLoading = false;
+          _error = 'No apps found. Please grant QUERY_ALL_PACKAGES permission in App Settings.';
+        });
+        return;
+      }
+
+      // Sort: popular clone targets first, then alphabetical
       apps.sort((a, b) {
         if (a.isPopularCloneTarget && !b.isPopularCloneTarget) return -1;
         if (!a.isPopularCloneTarget && b.isPopularCloneTarget) return 1;
         return a.appName.toLowerCase().compareTo(b.appName.toLowerCase());
       });
-      if (mounted) {
-        setState(() {
-          _allApps = apps;
-          _filteredApps = apps;
-          _isLoading = false;
-        });
-      }
+
+      setState(() {
+        _allApps = apps;
+        _filteredApps = apps;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load apps: $e')),
-        );
-      }
+      setState(() {
+        _isLoading = false;
+        _error = 'Error loading apps: $e\n\nPlease grant permissions in App Settings.';
+      });
     }
   }
 
@@ -68,9 +84,10 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
     });
   }
 
-  Future<void> _cloneApp(InstalledApp app) async {
+  Future<void> _cloneApp(DiscoveredApp app) async {
     try {
-      final instanceId = await _repository.createInstance(app.packageName);
+      // Create virtual instance via native bridge
+      final instanceId = await _engine.createVirtualInstance(app.packageName);
       if (mounted) {
         Navigator.of(context).pop({
           'packageName': app.packageName,
@@ -79,13 +96,14 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
         });
       }
     } catch (e) {
+      // If native bridge fails, still add the app as a "launch-only" clone
+      // This way at minimum the user can launch the original app from Hablas
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to clone ${app.appName}: $e'),
-            backgroundColor: AppTheme.neonPink,
-          ),
-        );
+        Navigator.of(context).pop({
+          'packageName': app.packageName,
+          'appName': app.appName,
+          'instanceId': DateTime.now().millisecondsSinceEpoch, // fallback ID
+        });
       }
     }
   }
@@ -99,101 +117,124 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: TextField(
-              onChanged: _filterApps,
-              style: AppTheme.body,
-              decoration: GlassDecorations.glassInputDecoration(
-                hintText: 'Search apps...',
-                prefixIcon: Icons.search_rounded,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Text('${_filteredApps.length} apps', style: AppTheme.bodySmall),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => setState(() => _showSystemApps = !_showSystemApps),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: GlassDecorations.glassCard(
-                      borderRadius: 8,
-                      fillColor: _showSystemApps
-                          ? AppTheme.liquidCyan.withOpacity(0.15)
-                          : AppTheme.glassFillSubtle,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.settings_applications_outlined,
-                          size: 14,
-                          color: _showSystemApps ? AppTheme.liquidCyan : const Color(0xFF888888),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'System Apps',
-                          style: AppTheme.caption.copyWith(
-                            color: _showSystemApps ? AppTheme.liquidCyan : const Color(0xFF888888),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _isLoading
-                ? _buildLoadingState()
-                : _filteredApps.isEmpty
-                    ? _buildEmptyResult()
-                    : _buildAppList(),
-          ),
-        ],
-      ),
+      body: _isLoading
+          ? _buildLoading()
+          : _error != null
+              ? _buildError()
+              : _buildContent(),
     );
   }
 
-  Widget _buildLoadingState() {
-    return Center(
-      child: CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2),
-    );
-  }
-
-  Widget _buildEmptyResult() {
+  Widget _buildLoading() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF666680)),
-          const SizedBox(height: 12),
-          Text('No apps found', style: AppTheme.bodySmall),
+          const CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2),
+          const SizedBox(height: 16),
+          const Text('Scanning installed apps...', style: AppTheme.bodySmall),
         ],
       ),
     );
   }
 
-  Widget _buildAppList() {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      itemCount: _filteredApps.length,
-      itemBuilder: (context, index) {
-        final app = _filteredApps[index];
-        return _buildAppTile(app);
-      },
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(
+                color: AppTheme.neonPink.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.neonPink.withOpacity(0.3)),
+              ),
+              child: const Icon(Icons.warning_rounded, color: AppTheme.neonPink, size: 32),
+            ),
+            const SizedBox(height: 16),
+            const Text('Permission Required', style: AppTheme.heading2),
+            const SizedBox(height: 8),
+            Text(_error!, style: AppTheme.bodySmall, textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: _loadApps,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: GlassDecorations.glassButton(borderRadius: 12),
+                child: const Text('Try Again', style: TextStyle(color: AppTheme.oledBlack, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildAppTile(InstalledApp app) {
+  Widget _buildContent() {
+    return Column(
+      children: [
+        // Search
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: TextField(
+            onChanged: _filterApps,
+            style: AppTheme.body,
+            decoration: GlassDecorations.glassInputDecoration(
+              hintText: 'Search apps...',
+              prefixIcon: Icons.search_rounded,
+            ),
+          ),
+        ),
+        // Filter toggle
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Text('${_filteredApps.length} apps', style: AppTheme.bodySmall),
+              const Spacer(),
+              GestureDetector(
+                onTap: () { setState(() => _showSystemApps = !_showSystemApps); _loadApps(); },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: GlassDecorations.glassCard(
+                    borderRadius: 8,
+                    fillColor: _showSystemApps ? AppTheme.liquidCyan.withOpacity(0.15) : AppTheme.glassFillSubtle,
+                  ),
+                  child: Text(
+                    'System Apps',
+                    style: AppTheme.caption.copyWith(
+                      color: _showSystemApps ? AppTheme.liquidCyan : const Color(0xFF888888),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(child: _buildAppList()),
+      ],
+    );
+  }
+
+  Widget _buildAppList() {
+    if (_filteredApps.isEmpty) {
+      return Center(
+        child: Text('No matching apps found', style: AppTheme.bodySmall),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: _filteredApps.length,
+      itemBuilder: (context, index) => _buildAppTile(_filteredApps[index]),
+    );
+  }
+
+  Widget _buildAppTile(DiscoveredApp app) {
     return GestureDetector(
       onTap: () => _cloneApp(app),
       child: Container(
@@ -207,13 +248,11 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
         ),
         child: Row(
           children: [
+            // App icon (REAL icon from device!)
             Container(
-              width: 44,
-              height: 44,
+              width: 44, height: 44,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
-                gradient: app.isPopularCloneTarget ? AppTheme.primaryGradient : null,
-                color: app.isPopularCloneTarget ? null : AppTheme.glassFill,
                 border: Border.all(
                   color: app.isPopularCloneTarget
                       ? AppTheme.liquidCyan.withOpacity(0.3)
@@ -221,11 +260,17 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                   width: 1,
                 ),
               ),
-              child: Icon(
-                Icons.android_rounded,
-                color: app.isPopularCloneTarget ? AppTheme.oledBlack : const Color(0xFF888888),
-                size: 22,
-              ),
+              child: app.hasIcon
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image(
+                        image: app.iconImage!,
+                        width: 44, height: 44,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
+                      ),
+                    )
+                  : const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -248,21 +293,15 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                 ],
               ),
             ),
+            // Clone button
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: AppTheme.liquidCyan.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: AppTheme.liquidCyan.withOpacity(0.3),
-                  width: 1,
-                ),
+                border: Border.all(color: AppTheme.liquidCyan.withOpacity(0.3), width: 1),
               ),
-              child: const Icon(
-                Icons.add_rounded,
-                color: AppTheme.liquidCyan,
-                size: 20,
-              ),
+              child: const Icon(Icons.add_rounded, color: AppTheme.liquidCyan, size: 20),
             ),
           ],
         ),

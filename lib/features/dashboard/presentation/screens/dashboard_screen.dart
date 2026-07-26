@@ -4,6 +4,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/theme/animated_liquid_background.dart';
+import '../../../../core/services/app_discovery_service.dart';
 import '../../domain/virtual_instance.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../widgets/glass_instance_card.dart';
