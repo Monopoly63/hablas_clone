@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.HablasStudio" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowBackground">@color/oled_black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/oled_black</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:colorBackground">@color/oled_black</item>
+        <item name="colorPrimary">@color/liquid_cyan</item>
+        <item name="colorPrimaryDark">@color/cobalt_blue</item>
+        <item name="colorAccent">@color/neon_emerald</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+    </style>
+
+    <style name="Theme.HablasStudio.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/oled_black</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.HablasStudio</item>
+    </style>
+</resources>

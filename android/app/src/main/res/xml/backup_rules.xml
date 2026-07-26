@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude sandbox directories from backup -->
+    <exclude domain="file" path="virtual/sandbox/" />
+    <exclude domain="sharedpref" path="." />
+</full-backup-content>

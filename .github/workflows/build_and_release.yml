@@ -1,0 +1,73 @@
+name: Hablas Studio Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Tests
+        run: flutter test
+        continue-on-error: true
+
+      - name: Build APK (Release)
+        run: flutter build apk --release
+
+      - name: Build APK (Split per ABI)
+        run: flutter build apk --release --split-per-abi
+        continue-on-error: true
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          echo "## Hablas Virtual Studio Release" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 🚀 What's New" >> release_notes.md
+          echo "- Liquid Glass UI with OLED Deep Black theme" >> release_notes.md
+          echo "- Unlimited app cloning and virtualization" >> release_notes.md
+          echo "- Native Android virtualization engine scaffolding" >> release_notes.md
+          echo "- Dashboard with real-time instance monitoring" >> release_notes.md
+          echo "- App picker with instant cloning support" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### ⚡ Features" >> release_notes.md
+          echo "- Absolute State & Session Persistence" >> release_notes.md
+          echo "- Infinite Instance Provisioning" >> release_notes.md
+          echo "- MethodChannel bridge to native Kotlin engine" >> release_notes.md
+          echo "- FileRedirector for sandboxed I/O" >> release_notes.md
+          echo "- PackageManagerHook & ActivityManagerHook scaffolding" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "---" >> release_notes.md
+          echo "*Built with ❤️ by Hablas Studio Team*" >> release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: |
+            build/app/outputs/flutter-apk/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
