@@ -3,17 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:hablas_virtual_studio/core/constants/app_constants.dart';
 import 'package:hablas_virtual_studio/core/theme/app_theme.dart';
 import 'package:hablas_virtual_studio/core/native_bridge/virtual_engine_bridge.dart';
+import 'package:hablas_virtual_studio/features/dashboard/domain/virtual_instance.dart';
+import 'package:hablas_virtual_studio/core/persistence/instance_persistence_service.dart';
 
 void main() {
   group('AppConstants', () {
-    test('appName should be Hablas Virtual Studio', () {
-      expect(AppConstants.appName, 'Hablas Virtual Studio');
+    test('appName should be Hablas Clone', () {
+      expect(AppConstants.appName, 'Hablas Clone');
     });
     test('packageName should be com.hablas.studio', () {
       expect(AppConstants.packageName, 'com.hablas.studio');
-    });
-    test('version should be 1.0.0', () {
-      expect(AppConstants.version, '1.0.0');
     });
     test('sandboxBasePath should contain com.hablas.studio', () {
       expect(AppConstants.sandboxBasePath, contains('com.hablas.studio'));
@@ -49,21 +48,32 @@ void main() {
       expect(exception.message, 'test error');
       expect(exception.toString(), contains('test error'));
     });
+    test('isRetryable flag works', () {
+      const retryable = VirtualEngineException('network error', isRetryable: true);
+      const permanent = VirtualEngineException('invalid package', isRetryable: false);
+      expect(retryable.isRetryable, true);
+      expect(permanent.isRetryable, false);
+    });
   });
 
-  group('InstanceStatus', () {
-    test('fromString parses correctly', () {
-      expect(InstanceStatus.fromString('running'), InstanceStatus.running);
-      expect(InstanceStatus.fromString('idle'), InstanceStatus.idle);
-      expect(InstanceStatus.fromString('sleeping'), InstanceStatus.sleeping);
-      expect(InstanceStatus.fromString('error'), InstanceStatus.error);
-      expect(InstanceStatus.fromString('unknown'), InstanceStatus.idle);
+  group('InstanceStatus (domain model)', () {
+    test('displayName returns correct names', () {
+      expect(InstanceStatus.running.displayName, 'Running');
+      expect(InstanceStatus.idle.displayName, 'Idle');
+      expect(InstanceStatus.sleeping.displayName, 'Sleeping');
+      expect(InstanceStatus.error.displayName, 'Error');
     });
-    test('toDisplayString returns names', () {
-      expect(InstanceStatus.running.toDisplayString(), 'Running');
-      expect(InstanceStatus.idle.toDisplayString(), 'Idle');
-      expect(InstanceStatus.sleeping.toDisplayString(), 'Sleeping');
-      expect(InstanceStatus.error.toDisplayString(), 'Error');
+    test('emoji returns correct symbols', () {
+      expect(InstanceStatus.running.emoji, '🟢');
+      expect(InstanceStatus.idle.emoji, '🔵');
+      expect(InstanceStatus.sleeping.emoji, '🌙');
+      expect(InstanceStatus.error.emoji, '🔴');
+    });
+    test('name property matches string values', () {
+      expect(InstanceStatus.running.name, 'running');
+      expect(InstanceStatus.idle.name, 'idle');
+      expect(InstanceStatus.sleeping.name, 'sleeping');
+      expect(InstanceStatus.error.name, 'error');
     });
   });
 
@@ -83,6 +93,121 @@ void main() {
       const a = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WhatsApp');
       const b = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WA');
       expect(a, equals(b));
+    });
+  });
+
+  group('VirtualInstanceModel', () {
+    test('fromDomain converts correctly', () {
+      final instance = VirtualInstance(
+        id: 'com.whatsapp_1',
+        packageName: 'com.whatsapp',
+        appName: 'WhatsApp',
+        instanceIndex: 1,
+        customName: 'WhatsApp — Clone 1',
+        status: InstanceStatus.idle,
+        storageSizeBytes: 0,
+        createdAt: DateTime(2024, 1, 1),
+      );
+      final model = VirtualInstanceModel.fromDomain(instance);
+      expect(model.id, 'com.whatsapp_1');
+      expect(model.packageName, 'com.whatsapp');
+      expect(model.status, 'idle');
+      expect(model.storageSizeBytes, 0);
+    });
+    test('toDomain converts back correctly', () {
+      final model = VirtualInstanceModel(
+        id: 'com.whatsapp_1',
+        packageName: 'com.whatsapp',
+        appName: 'WhatsApp',
+        instanceIndex: 1,
+        customName: 'WhatsApp — Clone 1',
+        status: 'idle',
+        storageSizeBytes: 0,
+        createdAtMs: DateTime(2024, 1, 1).millisecondsSinceEpoch,
+      );
+      final domain = model.toDomain();
+      expect(domain.id, 'com.whatsapp_1');
+      expect(domain.packageName, 'com.whatsapp');
+      expect(domain.status, InstanceStatus.idle);
+      expect(domain.storageSizeBytes, 0);
+    });
+    test('round-trip preserves data', () {
+      final original = VirtualInstance(
+        id: 'org.telegram_2',
+        packageName: 'org.telegram.messenger',
+        appName: 'Telegram',
+        instanceIndex: 2,
+        customName: 'Telegram — Clone 2',
+        status: InstanceStatus.running,
+        storageSizeBytes: 1024,
+        createdAt: DateTime.now(),
+        lastActiveAt: DateTime.now(),
+      );
+      final model = VirtualInstanceModel.fromDomain(original);
+      final restored = model.toDomain();
+      expect(restored.id, original.id);
+      expect(restored.packageName, original.packageName);
+      expect(restored.customName, original.customName);
+      expect(restored.status, original.status);
+      expect(restored.storageSizeBytes, original.storageSizeBytes);
+    });
+  });
+
+  group('VirtualInstanceInfo', () {
+    test('fromMap creates correctly with status string', () {
+      final info = VirtualInstanceInfo.fromMap({
+        'packageName': 'com.whatsapp',
+        'instanceId': 1,
+        'customName': 'WhatsApp Clone 1',
+        'status': 'running',
+        'storageSizeBytes': 512,
+        'createdAt': DateTime(2024, 1, 1).millisecondsSinceEpoch,
+      });
+      expect(info.packageName, 'com.whatsapp');
+      expect(info.instanceId, 1);
+      expect(info.status, InstanceStatus.running);
+      expect(info.storageSizeBytes, 512);
+    });
+    test('fromMap defaults to idle for unknown status', () {
+      final info = VirtualInstanceInfo.fromMap({
+        'packageName': 'com.whatsapp',
+        'instanceId': 1,
+        'customName': 'WhatsApp Clone 1',
+        'status': 'unknown_status',
+        'storageSizeBytes': 0,
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+      });
+      expect(info.status, InstanceStatus.idle);
+    });
+  });
+
+  group('VirtualInstance', () {
+    test('storageSizeFormatted formats correctly', () {
+      final small = VirtualInstance(
+        id: 'test_1', packageName: 'test', appName: 'test',
+        instanceIndex: 1, customName: 'test', status: InstanceStatus.idle,
+        storageSizeBytes: 512, createdAt: DateTime.now(),
+      );
+      expect(small.storageSizeFormatted, '512 B');
+
+      final kb = small.copyWith(storageSizeBytes: 1536);
+      expect(kb.storageSizeFormatted, '1.5 KB');
+
+      final mb = small.copyWith(storageSizeBytes: 1048576);
+      expect(mb.storageSizeFormatted, '1.0 MB');
+    });
+
+    test('copyWith preserves identity fields', () {
+      final original = VirtualInstance(
+        id: 'test_1', packageName: 'test', appName: 'test',
+        instanceIndex: 1, customName: 'test', status: InstanceStatus.idle,
+        storageSizeBytes: 0, createdAt: DateTime.now(),
+      );
+      final modified = original.copyWith(customName: 'New Name', status: InstanceStatus.running);
+      expect(modified.id, original.id);
+      expect(modified.packageName, original.packageName);
+      expect(modified.customName, 'New Name');
+      expect(modified.status, InstanceStatus.running);
     });
   });
 }

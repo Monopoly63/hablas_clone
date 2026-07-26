@@ -1,13 +1,22 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/services/app_discovery_service.dart';
 import '../../../../core/native_bridge/virtual_engine_bridge.dart';
+import '../../../../core/cache/app_cache_service.dart';
+import '../../../../core/persistence/instance_persistence_service.dart';
+import '../../../../features/app_picker/domain/app_picker_repository.dart';
 
 /// ─── App Picker Screen — Shows REAL installed apps with icons ────────
 ///
-/// Uses AppDiscoveryService (device_apps package) to enumerate
-/// installed apps on the device, including their actual icons.
+/// IMPROVED (v2):
+///   1. Uses AppCacheService for cached app list (5-min TTL)
+///   2. Stores icon bytes in persistence when cloning
+///   3. Passes icon bytes back to Dashboard for display
+///   4. Better error handling with retry
+///   5. Clone progress indicator
 ///
 class AppPickerScreen extends StatefulWidget {
   const AppPickerScreen({super.key});
@@ -17,8 +26,10 @@ class AppPickerScreen extends StatefulWidget {
 }
 
 class _AppPickerScreenState extends State<AppPickerScreen> {
-  final AppDiscoveryService _discovery = AppDiscoveryService();
-  final VirtualEngineBridge _engine = VirtualEngineBridge();
+  late AppDiscoveryService _discovery;
+  late VirtualEngineBridge _engine;
+  late AppCacheService _appCache;
+  late InstancePersistenceService _persistence;
 
   List<DiscoveredApp> _allApps = [];
   List<DiscoveredApp> _filteredApps = [];
@@ -26,22 +37,29 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
   String _searchQuery = '';
   bool _showSystemApps = false;
   String? _error;
+  String? _cloningPackageName; // Shows which app is being cloned
 
   @override
   void initState() {
     super.initState();
+    _discovery = AppDiscoveryService();
+    _engine = VirtualEngineBridge();
+    _appCache = context.read<AppCacheService>();
+    _persistence = context.read<InstancePersistenceService>();
     _loadApps();
   }
 
-  Future<void> _loadApps() async {
+  Future<void> _loadApps({bool forceRefresh = false}) async {
     setState(() { _isLoading = true; _error = null; });
+
     try {
-      final apps = _showSystemApps
-          ? await _discovery.getAllApps()
-          : await _discovery.getInstalledApps();
+      // Use cache service — avoids re-scanning every picker open
+      final apps = await _appCache.getApps(
+        forceRefresh: forceRefresh,
+        includeSystemApps: _showSystemApps,
+      );
 
       if (apps.isEmpty) {
-        // Permission likely not granted
         setState(() {
           _allApps = [];
           _filteredApps = [];
@@ -85,24 +103,36 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
   }
 
   Future<void> _cloneApp(DiscoveredApp app) async {
+    setState(() { _cloningPackageName = app.packageName; });
+
     try {
+      // Store icon bytes in persistence for the instance card
+      if (app.iconBytes != null && app.iconBytes!.isNotEmpty) {
+        await _persistence.saveIconBytes(app.packageName, app.iconBytes!);
+        _appCache.cacheIcon(app.packageName, app.iconBytes!);
+      }
+
       // Create virtual instance via native bridge
       final instanceId = await _engine.createVirtualInstance(app.packageName);
+
       if (mounted) {
+        setState(() { _cloningPackageName = null; });
         Navigator.of(context).pop({
           'packageName': app.packageName,
           'appName': app.appName,
           'instanceId': instanceId,
+          'iconBytes': app.iconBytes, // Pass icon bytes to Dashboard
         });
       }
     } catch (e) {
       // If native bridge fails, still add the app as a "launch-only" clone
-      // This way at minimum the user can launch the original app from Hablas
       if (mounted) {
+        setState(() { _cloningPackageName = null; });
         Navigator.of(context).pop({
           'packageName': app.packageName,
           'appName': app.appName,
-          'instanceId': DateTime.now().millisecondsSinceEpoch, // fallback ID
+          'instanceId': DateTime.now().millisecondsSinceEpoch % 100000, // fallback ID
+          'iconBytes': app.iconBytes,
         });
       }
     }
@@ -160,7 +190,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
             Text(_error!, style: AppTheme.bodySmall, textAlign: TextAlign.center),
             const SizedBox(height: 24),
             GestureDetector(
-              onTap: _loadApps,
+              onTap: () => _loadApps(forceRefresh: true),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 decoration: GlassDecorations.glassButton(borderRadius: 12),
@@ -196,7 +226,7 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
               Text('${_filteredApps.length} apps', style: AppTheme.bodySmall),
               const Spacer(),
               GestureDetector(
-                onTap: () { setState(() => _showSystemApps = !_showSystemApps); _loadApps(); },
+                onTap: () { setState(() => _showSystemApps = !_showSystemApps); _loadApps(forceRefresh: true); },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: GlassDecorations.glassCard(
@@ -230,13 +260,16 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       itemCount: _filteredApps.length,
+      cacheExtent: 500, // Pre-cache for 120fps
       itemBuilder: (context, index) => _buildAppTile(_filteredApps[index]),
     );
   }
 
   Widget _buildAppTile(DiscoveredApp app) {
+    final isCloning = _cloningPackageName == app.packageName;
+
     return GestureDetector(
-      onTap: () => _cloneApp(app),
+      onTap: isCloning ? null : () => _cloneApp(app),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
@@ -260,17 +293,19 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                   width: 1,
                 ),
               ),
-              child: app.hasIcon
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image(
-                        image: app.iconImage!,
-                        width: 44, height: 44,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
-                      ),
-                    )
-                  : const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
+              child: isCloning
+                  ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2)))
+                  : app.hasIcon
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image(
+                            image: app.iconImage!,
+                            width: 44, height: 44,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
+                          ),
+                        )
+                      : const Icon(Icons.android_rounded, color: Color(0xFF888888), size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -290,19 +325,24 @@ class _AppPickerScreenState extends State<AppPickerScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (isCloning) ...[
+                    const SizedBox(height: 4),
+                    Text('Creating clone...', style: AppTheme.caption.copyWith(color: AppTheme.liquidCyan)),
+                  ],
                 ],
               ),
             ),
-            // Clone button
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.liquidCyan.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.liquidCyan.withOpacity(0.3), width: 1),
+            // Clone button (or spinner if cloning)
+            if (!isCloning)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.liquidCyan.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.liquidCyan.withOpacity(0.3), width: 1),
+                ),
+                child: const Icon(Icons.add_rounded, color: AppTheme.liquidCyan, size: 20),
               ),
-              child: const Icon(Icons.add_rounded, color: AppTheme.liquidCyan, size: 20),
-            ),
           ],
         ),
       ),

@@ -3,17 +3,37 @@
 ///
 /// Channel: com.hablas.studio/engine
 /// All calls are asynchronous and return typed results via platform channels.
+///
+/// IMPROVED (v2):
+///   1. Removed duplicate InstanceStatus enum → uses domain model only
+///   2. Added fallback launch using installed_apps package
+///   3. Better error classification (retryable vs permanent)
+///   4. Connection health check
 library;
 
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
+import '../../features/dashboard/domain/virtual_instance.dart' show InstanceStatus;
 
 class VirtualEngineBridge {
   static const String _channelName = 'com.hablas.studio/engine';
-
   static const MethodChannel _channel = MethodChannel(_channelName);
-
   static final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
+
+  // ─── Connection Health ──────────────────────────────────────────────
+
+  /// Checks if the native engine is reachable and responsive.
+  Future<bool> isEngineHealthy() async {
+    try {
+      final result = await _channel.invokeMethod('getAllInstances');
+      return result != null;
+    } on PlatformException catch (e) {
+      _logger.e('Engine health check failed: ${e.message}');
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   // ─── App Discovery ──────────────────────────────────────────────────
 
@@ -21,9 +41,7 @@ class VirtualEngineBridge {
   /// Returns a list of maps containing package metadata.
   Future<List<InstalledAppInfo>> getSystemInstalledApps() async {
     try {
-      final List<dynamic> result = await _channel.invokeMethod(
-        'getSystemInstalledApps',
-      );
+      final List<dynamic> result = await _channel.invokeMethod('getSystemInstalledApps');
       return result.map((item) => InstalledAppInfo.fromMap(item as Map<String, dynamic>)).toList();
     } on PlatformException catch (e) {
       _logger.e('Failed to get installed apps: ${e.message}', error: e);
@@ -49,6 +67,7 @@ class VirtualEngineBridge {
   }
 
   /// Launches a virtual instance inside its sandbox container.
+  /// Native engine actually starts the app via Intent now.
   Future<bool> launchVirtualInstance(String packageName, int instanceId) async {
     try {
       final bool success = await _channel.invokeMethod(
@@ -170,11 +189,13 @@ class InstalledAppInfo {
   int get hashCode => packageName.hashCode;
 }
 
+/// Info about a virtual instance returned from the native engine.
+/// NOTE: Uses domain model's InstanceStatus enum, NOT a separate one.
 class VirtualInstanceInfo {
   final String packageName;
   final int instanceId;
   final String customName;
-  final InstanceStatus status;
+  final InstanceStatus status; // Using domain model enum
   final int storageSizeBytes;
   final DateTime createdAt;
 
@@ -192,7 +213,10 @@ class VirtualInstanceInfo {
       packageName: map['packageName'] as String,
       instanceId: map['instanceId'] as int,
       customName: map['customName'] as String? ?? 'Instance ${map['instanceId']}',
-      status: InstanceStatus.fromString(map['status'] as String? ?? 'idle'),
+      status: InstanceStatus.values.firstWhere(
+        (s) => s.name == (map['status'] as String? ?? 'idle'),
+        orElse: () => InstanceStatus.idle,
+      ),
       storageSizeBytes: map['storageSizeBytes'] as int? ?? 0,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         map['createdAt'] as int? ?? DateTime.now().millisecondsSinceEpoch,
@@ -201,34 +225,11 @@ class VirtualInstanceInfo {
   }
 }
 
-enum InstanceStatus {
-  running,
-  idle,
-  sleeping,
-  error;
-
-  static InstanceStatus fromString(String value) {
-    return switch (value.toLowerCase()) {
-      'running' => InstanceStatus.running,
-      'sleeping' => InstanceStatus.sleeping,
-      'error' => InstanceStatus.error,
-      _ => InstanceStatus.idle,
-    };
-  }
-
-  String toDisplayString() {
-    return switch (this) {
-      InstanceStatus.running => 'Running',
-      InstanceStatus.idle => 'Idle',
-      InstanceStatus.sleeping => 'Sleeping',
-      InstanceStatus.error => 'Error',
-    };
-  }
-}
-
 class VirtualEngineException implements Exception {
   final String message;
-  const VirtualEngineException(this.message);
+  final bool isRetryable; // Whether caller should retry
+
+  const VirtualEngineException(this.message, {this.isRetryable = false});
 
   @override
   String toString() => 'VirtualEngineException: $message';

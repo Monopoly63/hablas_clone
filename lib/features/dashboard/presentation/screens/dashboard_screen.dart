@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_constants.dart';
@@ -5,6 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/theme/animated_liquid_background.dart';
 import '../../../../core/services/app_discovery_service.dart';
+import '../../../../core/persistence/instance_persistence_service.dart';
 import '../../domain/virtual_instance.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../widgets/glass_instance_card.dart';
@@ -12,13 +14,12 @@ import '../../../app_picker/presentation/screens/app_picker_screen.dart';
 
 /// ─── Dashboard Screen — 120fps Optimized ────────────────────────────
 ///
-/// PERFORMANCE OPTIMIZATIONS:
-/// 1. AnimatedLiquidBackground replaces manual AnimatedBuilder + gradient rebuilds
-/// 2. RepaintBoundary on every GlassInstanceCard isolates repaints
-/// 3. const constructors wherever possible
-/// 4. No BackdropFilter anywhere — uses translucent fills instead
-/// 5. ListView instead of Column+Expanded for better scroll performance
-/// 6. GlobalKey-free widget tree for efficient diffing
+/// IMPROVED (v2):
+///   1. Clear Cache action is now wired to BLoC event
+///   2. App picker returns icon bytes → stored in persistence
+///   3. Shows error banner with retry button
+///   4. "Retry" floating action when last action failed
+///   5. Instance count per-package in group header
 ///
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -31,7 +32,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // Trigger initial data load after first frame renders
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DashboardBloc>().add(LoadDashboard());
     });
@@ -45,6 +45,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             children: [
               _buildAppBar(),
+              // Error banner
+              BlocBuilder<DashboardBloc, DashboardState>(
+                builder: (context, state) {
+                  if (state.hasError) return _buildErrorBanner(state);
+                  return const SizedBox.shrink();
+                },
+              ),
               Expanded(child: _buildBody()),
             ],
           ),
@@ -54,7 +61,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ─── Error Banner ──────────────────────────────────────────────────
+
+  Widget _buildErrorBanner(DashboardState state) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.neonPink.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.neonPink.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppTheme.neonPink, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(state.error ?? '', style: AppTheme.bodySmall.copyWith(color: AppTheme.neonPink), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          GestureDetector(
+            onTap: () => context.read<DashboardBloc>().add(RetryLastAction()),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.neonEmerald.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text('Retry', style: TextStyle(color: AppTheme.neonEmerald, fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── App Bar ────────────────────────────────────────────────────────
+
   Widget _buildAppBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -113,6 +155,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── Body ───────────────────────────────────────────────────────────
+
   Widget _buildBody() {
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
@@ -143,7 +186,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Brand logo
             Container(
               width: 80, height: 80,
               decoration: BoxDecoration(
@@ -199,6 +241,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── Instance List (120fps-optimized) ───────────────────────────────
+
   Widget _buildInstanceList(DashboardState state) {
     final grouped = state.groupedByPackage;
 
@@ -207,10 +250,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: AppTheme.surfaceDark,
       onRefresh: () async => context.read<DashboardBloc>().add(RefreshDashboard()),
       child: ListView(
-        // physics: BouncingScrollPhysics() for 120fps smooth feel
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-        cacheExtent: 500, // Pre-cache 500px below viewport
+        cacheExtent: 500,
         children: [
           _buildStatsBar(state),
           const SizedBox(height: 20),
@@ -261,7 +303,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Text(_formatBytes(totalStorage), style: AppTheme.bodySmall.copyWith(color: AppTheme.cobaltBlue)),
       ]),
       const SizedBox(height: 8),
-      // RepaintBoundary per instance card — isolated repaints
       ...instances.map((instance) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: RepaintBoundary(
@@ -278,6 +319,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── FAB ────────────────────────────────────────────────────────────
+
   Widget _buildFAB() {
     return GestureDetector(
       onTap: _openAppPicker,
@@ -290,15 +332,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── Navigation ─────────────────────────────────────────────────────
+
   void _openAppPicker() async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const AppPickerScreen(),
-        // Smooth 120fps transition
         fullscreenDialog: true,
       ),
     );
+
     if (result != null && result is Map<String, dynamic> && mounted) {
+      // Store icon bytes if returned from picker
+      final iconBytes = result['iconBytes'] as Uint8List?;
+      if (iconBytes != null && iconBytes.isNotEmpty) {
+        final persistence = context.read<InstancePersistenceService>();
+        await persistence.saveIconBytes(result['packageName'] as String, iconBytes);
+      }
+
       context.read<DashboardBloc>().add(AppAddedFromPicker(
         packageName: result['packageName'] as String,
         appName: result['appName'] as String,
@@ -308,6 +358,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── Instance Actions Sheet ─────────────────────────────────────────
+
   void _showInstanceActions(VirtualInstance instance) {
     showModalBottomSheet(
       context: context,
@@ -324,6 +375,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               Text(instance.customName, style: AppTheme.heading2),
               Text(instance.packageName, style: AppTheme.bodySmall),
+              Text('${instance.status.emoji} ${instance.status.displayName}', style: AppTheme.bodySmall.copyWith(color: _statusColor(instance))),
               const SizedBox(height: 20),
               ListTile(
                 leading: const Icon(Icons.edit_rounded, color: AppTheme.liquidCyan),
@@ -333,12 +385,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ListTile(
                 leading: const Icon(Icons.cleaning_services_outlined, color: AppTheme.cobaltBlue),
                 title: Text('Clear Cache', style: AppTheme.body.copyWith(color: AppTheme.cobaltBlue)),
-                onTap: () => Navigator.pop(ctx),
+                subtitle: Text('${instance.storageSizeFormatted} storage', style: AppTheme.caption),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.read<DashboardBloc>().add(ClearInstanceCache(instance.id));
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.shortcut_rounded, color: AppTheme.neonEmerald),
                 title: Text('Create Shortcut', style: AppTheme.body.copyWith(color: AppTheme.neonEmerald)),
                 onTap: () => Navigator.pop(ctx),
+              ),
+              ListTile(
+                leading: const Icon(Icons.refresh_rounded, color: AppTheme.liquidCyan),
+                title: Text('Sync with Engine', style: AppTheme.body.copyWith(color: AppTheme.liquidCyan)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.read<DashboardBloc>().add(SyncWithNativeEngine());
+                },
               ),
               ListTile(
                 leading: const Icon(Icons.delete_outline_rounded, color: AppTheme.neonPink),
@@ -351,6 +415,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  Color _statusColor(VirtualInstance instance) => switch (instance.status) {
+    InstanceStatus.running => AppTheme.neonEmerald,
+    InstanceStatus.idle => AppTheme.cobaltBlue,
+    InstanceStatus.sleeping => AppTheme.statusSleeping,
+    InstanceStatus.error => AppTheme.neonPink,
+  };
 
   void _showRename(VirtualInstance instance) {
     final ctrl = TextEditingController(text: instance.customName);

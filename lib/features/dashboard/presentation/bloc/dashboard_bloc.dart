@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../../domain/virtual_instance.dart';
 import '../../../app_picker/domain/installed_app.dart';
 import '../../../app_picker/domain/app_picker_repository.dart';
+import '../../../core/persistence/instance_persistence_service.dart';
 
 // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -60,6 +61,17 @@ class AppAddedFromPicker extends DashboardEvent {
   List<Object?> get props => [packageName, appName, instanceId];
 }
 
+class ClearInstanceCache extends DashboardEvent {
+  final String instanceId;
+  ClearInstanceCache(this.instanceId);
+  @override
+  List<Object?> get props => [instanceId];
+}
+
+class SyncWithNativeEngine extends DashboardEvent {}
+
+class RetryLastAction extends DashboardEvent {}
+
 // ─── State ───────────────────────────────────────────────────────────────
 
 class DashboardState extends Equatable {
@@ -67,25 +79,33 @@ class DashboardState extends Equatable {
   final bool isLoading;
   final String? error;
   final Map<String, int> totalStorageByApp; // package → total bytes
+  final bool isSyncing;
+  final String? lastFailedAction; // For retry support
 
   DashboardState({
     this.instances = const [],
     this.isLoading = false,
     this.error,
     this.totalStorageByApp = const {},
+    this.isSyncing = false,
+    this.lastFailedAction,
   });
 
   DashboardState copyWith({
     List<VirtualInstance>? instances,
     bool? isLoading,
-    String? error,
+    String? error, // Explicitly pass null to clear error
     Map<String, int>? totalStorageByApp,
+    bool? isSyncing,
+    String? lastFailedAction,
   }) {
     return DashboardState(
       instances: instances ?? this.instances,
       isLoading: isLoading ?? this.isLoading,
-      error: error,
+      error: error, // NOT ?? this.error — so passing null clears it
       totalStorageByApp: totalStorageByApp ?? this.totalStorageByApp,
+      isSyncing: isSyncing ?? this.isSyncing,
+      lastFailedAction: lastFailedAction ?? this.lastFailedAction,
     );
   }
 
@@ -98,14 +118,18 @@ class DashboardState extends Equatable {
     return map;
   }
 
+  /// Counts how many instances exist for a specific package.
+  int instanceCountForPackage(String packageName) =>
+      instances.where((i) => i.packageName == packageName).length;
+
   int get totalInstanceCount => instances.length;
-
   int get runningInstanceCount => instances.where((i) => i.status == InstanceStatus.running).length;
-
   int get totalStorageBytes => totalStorageByApp.values.fold(0, (a, b) => a + b);
+  bool get hasError => error != null;
+  bool get isEmpty => instances.isEmpty && !isLoading;
 
   @override
-  List<Object?> get props => [instances, isLoading, error, totalStorageByApp];
+  List<Object?> get props => [instances, isLoading, error, totalStorageByApp, isSyncing];
 }
 
 // ─── BLoC ────────────────────────────────────────────────────────────────
@@ -124,31 +148,49 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<RenameInstance>(_onRenameInstance);
     on<CloneNewApp>(_onCloneNewApp);
     on<AppAddedFromPicker>(_onAppAddedFromPicker);
+    on<ClearInstanceCache>(_onClearInstanceCache);
+    on<SyncWithNativeEngine>(_onSyncWithNativeEngine);
+    on<RetryLastAction>(_onRetryLastAction);
   }
+
+  // ─── Helper: compute storage map ──────────────────────────────────
+  Map<String, int> _computeStorageMap(List<VirtualInstance> instances) {
+    final storageMap = <String, int>{};
+    for (final instance in instances) {
+      storageMap[instance.packageName] =
+          (storageMap[instance.packageName] ?? 0) + instance.storageSizeBytes;
+    }
+    return storageMap;
+  }
+
+  // ─── Load Dashboard ───────────────────────────────────────────────
 
   Future<void> _onLoadDashboard(LoadDashboard event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isLoading: true, error: null));
     try {
-      // Load persisted instances from local storage
+      // Load persisted instances from Hive + sync with native engine
       final instances = await _appPickerRepository.loadPersistedInstances();
-      final storageMap = <String, int>{};
-      for (final instance in instances) {
-        storageMap[instance.packageName] =
-            (storageMap[instance.packageName] ?? 0) + instance.storageSizeBytes;
-      }
+      final storageMap = _computeStorageMap(instances);
       emit(state.copyWith(
         instances: instances,
         isLoading: false,
         totalStorageByApp: storageMap,
       ));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, error: e.toString()));
+      emit(state.copyWith(
+        isLoading: false,
+        error: 'Failed to load instances: $e',
+        lastFailedAction: 'LoadDashboard',
+      ));
     }
   }
 
+  // ─── Refresh Dashboard ────────────────────────────────────────────
+
   Future<void> _onRefreshDashboard(RefreshDashboard event, Emitter<DashboardState> emit) async {
-    // Re-fetch storage sizes from native engine
+    emit(state.copyWith(isSyncing: true));
     try {
+      // Re-fetch storage sizes from native engine
       final updatedInstances = <VirtualInstance>[];
       for (final instance in state.instances) {
         final size = await _appPickerRepository.getStorageSize(
@@ -157,76 +199,127 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         );
         updatedInstances.add(instance.copyWith(storageSizeBytes: size));
       }
-      final storageMap = <String, int>{};
-      for (final instance in updatedInstances) {
-        storageMap[instance.packageName] =
-            (storageMap[instance.packageName] ?? 0) + instance.storageSizeBytes;
-      }
+      final storageMap = _computeStorageMap(updatedInstances);
+
+      // Persist updated sizes to Hive
+      await _appPickerRepository.persistInstances(updatedInstances);
+
       emit(state.copyWith(
         instances: updatedInstances,
         totalStorageByApp: storageMap,
+        isSyncing: false,
+        error: null,
       ));
     } catch (e) {
-      emit(state.copyWith(error: e.toString()));
+      emit(state.copyWith(
+        isSyncing: false,
+        error: 'Refresh failed: $e',
+        lastFailedAction: 'RefreshDashboard',
+      ));
     }
   }
+
+  // ─── Launch Instance ──────────────────────────────────────────────
 
   Future<void> _onLaunchInstance(LaunchInstance event, Emitter<DashboardState> emit) async {
     final instance = state.instances.firstWhere(
       (i) => i.id == event.instanceId,
-      orElse: () => throw StateError('Instance not found'),
+      orElse: () => throw StateError('Instance not found: ${event.instanceId}'),
     );
+
+    // Optimistic update: show "running" immediately for 120fps feel
+    final optimisticUpdated = state.instances.map((i) {
+      if (i.id == event.instanceId) {
+        return i.copyWith(status: InstanceStatus.running, lastActiveAt: DateTime.now());
+      }
+      return i;
+    }).toList();
+    emit(state.copyWith(instances: optimisticUpdated, error: null));
+
+    // Then actually launch via native engine
     final success = await _appPickerRepository.launchInstance(
       instance.packageName,
       instance.instanceIndex,
     );
-    if (success) {
-      final updated = state.instances.map((i) {
+
+    if (!success) {
+      // Rollback optimistic update
+      final rolledBack = state.instances.map((i) {
         if (i.id == event.instanceId) {
-          return i.copyWith(status: InstanceStatus.running, lastActiveAt: DateTime.now());
+          return i.copyWith(status: InstanceStatus.error, lastActiveAt: instance.lastActiveAt);
         }
         return i;
       }).toList();
-      emit(state.copyWith(instances: updated));
+      emit(state.copyWith(
+        instances: rolledBack,
+        error: 'Failed to launch ${instance.appName}',
+        lastFailedAction: 'LaunchInstance:${event.instanceId}',
+      ));
     }
+
+    // Persist to Hive
+    await _appPickerRepository.persistInstances(state.instances);
   }
+
+  // ─── Terminate Instance ───────────────────────────────────────────
 
   Future<void> _onTerminateInstance(TerminateInstance event, Emitter<DashboardState> emit) async {
     final instance = state.instances.firstWhere(
       (i) => i.id == event.instanceId,
       orElse: () => throw StateError('Instance not found'),
     );
+
+    // Optimistic update
+    final optimisticUpdated = state.instances.map((i) {
+      if (i.id == event.instanceId) {
+        return i.copyWith(status: InstanceStatus.idle);
+      }
+      return i;
+    }).toList();
+    emit(state.copyWith(instances: optimisticUpdated, error: null));
+
     final success = await _appPickerRepository.terminateInstance(
       instance.packageName,
       instance.instanceIndex,
     );
-    if (success) {
-      final updated = state.instances.map((i) {
+
+    if (!success) {
+      // Rollback
+      final rolledBack = state.instances.map((i) {
         if (i.id == event.instanceId) {
-          return i.copyWith(status: InstanceStatus.idle);
+          return i.copyWith(status: InstanceStatus.running);
         }
         return i;
       }).toList();
-      emit(state.copyWith(instances: updated));
+      emit(state.copyWith(
+        instances: rolledBack,
+        error: 'Failed to terminate ${instance.appName}',
+      ));
     }
+
+    await _appPickerRepository.persistInstances(state.instances);
   }
+
+  // ─── Delete Instance ──────────────────────────────────────────────
 
   Future<void> _onDeleteInstance(DeleteInstance event, Emitter<DashboardState> emit) async {
     final instance = state.instances.firstWhere(
       (i) => i.id == event.instanceId,
     );
+
+    // Remove immediately from UI
+    final updated = state.instances.where((i) => i.id != event.instanceId).toList();
+    final storageMap = _computeStorageMap(updated);
+    emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
+
+    // Delete from native engine + Hive
     await _appPickerRepository.deleteInstance(
       instance.packageName,
       instance.instanceIndex,
     );
-    final updated = state.instances.where((i) => i.id != event.instanceId).toList();
-    final storageMap = <String, int>{};
-    for (final inst in updated) {
-      storageMap[inst.packageName] =
-          (storageMap[inst.packageName] ?? 0) + inst.storageSizeBytes;
-    }
-    emit(state.copyWith(instances: updated, totalStorageByApp: storageMap));
   }
+
+  // ─── Rename Instance ──────────────────────────────────────────────
 
   Future<void> _onRenameInstance(RenameInstance event, Emitter<DashboardState> emit) async {
     final updated = state.instances.map((i) {
@@ -235,56 +328,159 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       }
       return i;
     }).toList();
-    emit(state.copyWith(instances: updated));
+    emit(state.copyWith(instances: updated, error: null));
     await _appPickerRepository.persistInstances(updated);
   }
 
+  // ─── Clone New App ────────────────────────────────────────────────
+
   Future<void> _onCloneNewApp(CloneNewApp event, Emitter<DashboardState> emit) async {
+    emit(state.copyWith(isLoading: true, error: null));
     try {
-      final instanceId = await _appPickerRepository.createInstance(event.packageName);
-      final appInfo = await _appPickerRepository.getAppInfo(event.packageName);
+      // Get icon bytes from cache if available
+      final iconBytes = _appPickerRepository.getIconBytes(event.packageName);
+
+      final instanceId = await _appPickerRepository.createInstance(
+        event.packageName,
+        iconBytes: iconBytes,
+      );
+
+      final appName = _appPickerRepository.getAppNameForPackage(event.packageName);
+      final existingCount = state.instanceCountForPackage(event.packageName);
+
       final newInstance = VirtualInstance(
         id: '${event.packageName}_$instanceId',
         packageName: event.packageName,
-        appName: appInfo.appName,
+        appName: appName,
         instanceIndex: instanceId,
-        customName: '${appInfo.appName} — Instance $instanceId',
+        customName: existingCount == 0
+            ? '$appName — Clone 1'
+            : '$appName — Clone ${existingCount + 1}',
         status: InstanceStatus.idle,
         storageSizeBytes: 0,
         createdAt: DateTime.now(),
-        iconPath: appInfo.iconPath,
       );
+
       final updated = [...state.instances, newInstance];
-      final storageMap = <String, int>{};
-      for (final inst in updated) {
-        storageMap[inst.packageName] =
-            (storageMap[inst.packageName] ?? 0) + inst.storageSizeBytes;
-      }
-      emit(state.copyWith(instances: updated, totalStorageByApp: storageMap));
-      await _appPickerRepository.persistInstances(updated);
+      final storageMap = _computeStorageMap(updated);
+      emit(state.copyWith(
+        instances: updated,
+        totalStorageByApp: storageMap,
+        isLoading: false,
+      ));
+
+      // Persist to Hive (icon already stored in createInstance)
+      await _persistence.saveInstance(newInstance);
     } catch (e) {
-      emit(state.copyWith(error: e.toString()));
+      emit(state.copyWith(
+        isLoading: false,
+        error: 'Clone failed: $e',
+        lastFailedAction: 'CloneNewApp:${event.packageName}',
+      ));
     }
   }
 
+  // ─── App Added from Picker ────────────────────────────────────────
+
   Future<void> _onAppAddedFromPicker(AppAddedFromPicker event, Emitter<DashboardState> emit) async {
+    final existingCount = state.instanceCountForPackage(event.packageName);
+
     final newInstance = VirtualInstance(
       id: '${event.packageName}_${event.instanceId}',
       packageName: event.packageName,
       appName: event.appName,
       instanceIndex: event.instanceId,
-      customName: '$event.appName — Instance $event.instanceId',
+      customName: existingCount == 0
+          ? '${event.appName} — Clone 1'
+          : '${event.appName} — Clone ${existingCount + 1}',
       status: InstanceStatus.idle,
       storageSizeBytes: 0,
       createdAt: DateTime.now(),
     );
+
     final updated = [...state.instances, newInstance];
-    final storageMap = <String, int>{};
-    for (final inst in updated) {
-      storageMap[inst.packageName] =
-          (storageMap[inst.packageName] ?? 0) + inst.storageSizeBytes;
-    }
-    emit(state.copyWith(instances: updated, totalStorageByApp: storageMap));
-    await _appPickerRepository.persistInstances(updated);
+    final storageMap = _computeStorageMap(updated);
+    emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
+
+    // Persist to Hive
+    await _persistence.saveInstance(newInstance);
   }
-}
+
+  // ─── Clear Instance Cache ─────────────────────────────────────────
+
+  Future<void> _onClearInstanceCache(ClearInstanceCache event, Emitter<DashboardState> emit) async {
+    final instance = state.instances.firstWhere(
+      (i) => i.id == event.instanceId,
+      orElse: () => throw StateError('Instance not found'),
+    );
+
+    final success = await _appPickerRepository.clearInstanceCache(
+      instance.packageName,
+      instance.instanceIndex,
+    );
+
+    if (success) {
+      // Refresh storage size after clearing cache
+      final newSize = await _appPickerRepository.getStorageSize(
+        instance.packageName,
+        instance.instanceIndex,
+      );
+
+      final updated = state.instances.map((i) {
+        if (i.id == event.instanceId) {
+          return i.copyWith(storageSizeBytes: newSize);
+        }
+        return i;
+      }).toList();
+      final storageMap = _computeStorageMap(updated);
+      emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
+      await _appPickerRepository.persistInstances(updated);
+    } else {
+      emit(state.copyWith(error: 'Failed to clear cache'));
+    }
+  }
+
+  // ─── Sync with Native Engine ──────────────────────────────────────
+
+  Future<void> _onSyncWithNativeEngine(SyncWithNativeEngine event, Emitter<DashboardState> emit) async {
+    emit(state.copyWith(isSyncing: true));
+    try {
+      final instances = await _appPickerRepository.loadPersistedInstances();
+      final storageMap = _computeStorageMap(instances);
+      emit(state.copyWith(
+        instances: instances,
+        totalStorageByApp: storageMap,
+        isSyncing: false,
+        error: null,
+      ));
+    } catch (e) {
+      emit(state.copyWith(isSyncing: false, error: 'Sync failed: $e'));
+    }
+  }
+
+  // ─── Retry ─────────────────────────────────────────────────────────
+
+  Future<void> _onRetryLastAction(RetryLastAction event, Emitter<DashboardState> emit) async {
+    emit(state.copyWith(error: null)); // Clear error
+    final action = state.lastFailedAction;
+    if (action == null) return;
+
+    if (action == 'LoadDashboard') {
+      add(LoadDashboard());
+    } else if (action == 'RefreshDashboard') {
+      add(RefreshDashboard());
+    } else if (action.startsWith('CloneNewApp:')) {
+      final packageName = action.substring('CloneNewApp:'.length);
+      add(CloneNewApp(packageName));
+    } else if (action.startsWith('LaunchInstance:')) {
+      final instanceId = action.substring('LaunchInstance:'.length);
+      add(LaunchInstance(instanceId));
+    }
+  }
+
+  // ─── Persistence reference ( direct calls ──────────────────────
+  // NOTE: We access this via the repository in CloneNewApp. Other events use _persistInstances
+  // through the repository which AppPickerRepository.
+  late InstancePersistenceService _persistence;
+
+

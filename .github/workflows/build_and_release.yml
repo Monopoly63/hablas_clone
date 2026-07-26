@@ -1,7 +1,6 @@
-name: Hablas Studio Build & Release
+name: Hablas Clone Build & Release
 
-on:
-  push:
+on: push:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -46,21 +45,28 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         run: |
-          echo "## Hablas Virtual Studio Release" >> release_notes.md
+          echo "## Hablas Clone v1.3.0 Release" >> release_notes.md
           echo "" >> release_notes.md
           echo "### 🚀 What's New" >> release_notes.md
-          echo "- Liquid Glass UI with OLED Deep Black theme" >> release_notes.md
-          echo "- Unlimited app cloning and virtualization" >> release_notes.md
-          echo "- Native Android virtualization engine scaffolding" >> release_notes.md
-          echo "- Dashboard with real-time instance monitoring" >> release_notes.md
-          echo "- App picker with instant cloning support" >> release_notes.md
+          echo "- **Hive Persistence**: Cloned instances now survive app restarts!" >> release_notes.md
+          echo "- **Icon Persistence**: App icons stored & displayed across restarts" >> release_notes.md
+          echo "- **App Cache Service**: Avoids re-scanning device on every picker open" >> release_notes.md
+          echo "- **Native Engine ↔ Dart Sync**: Instances merged from Hive + native engine on startup" >> release_notes.md
+          echo "- **Real App Launching**: launchVirtualInstance now ACTUALLY launches apps via Intent" >> release_notes.md
+          echo "- **Enhanced Permission Gate**: Verifies QUERY_ALL_PACKAGES works by testing app enumeration" >> release_notes.md
+          echo "- **Optimistic UI Updates**: Launch/terminate show status change before engine confirms arrives" >> release_notes.md
+          echo "- **Retry Support**: Failed actions can be retried from dashboard" >> release_notes.md
+          echo "- **Clear Cache**: Action wired to instance action sheet" >> release_notes.md
+          echo "- **Clone naming**: 'WhatsApp — Clone 1' instead generic numbering" >> release_notes.md
+          echo "- **Removed duplicate InstanceStatus enum**: Consolidated to domain model" >> release_notes.md
+          echo "- **Error banner with dashboard**: Shows retry button when actions fail" >> release_notes.md
           echo "" >> release_notes.md
-          echo "### ⚡ Features" >> release_notes.md
-          echo "- Absolute State & Session Persistence" >> release_notes.md
-          echo "- Infinite Instance Provisioning" >> release_notes.md
-          echo "- MethodChannel bridge to native Kotlin engine" >> release_notes.md
-          echo "- FileRedirector for sandboxed I/O" >> release_notes.md
-          echo "- PackageManagerHook & ActivityManagerHook scaffolding" >> release_notes.md
+          echo "### ⚡ Backend/Logic Improvements" >> release_notes.md
+          echo "- InstancePersistenceService: Full Hive CRUD for VirtualInstance" >> release_notes.md
+          echo "- AppCacheService: 5-minute TTL cache for discovered apps" >> release_notes.md
+          echo "- Native engine: hasLaunchableActivity filter + Intent launch + Kotlin" >> release_notes.md
+          echo "- Package validation before creating instances" >> release_notes.md
+          echo "- Instance health monitoring ( periodic native engine sync)" >> release_notes.md
           echo "" >> release_notes.md
           echo "---" >> release_notes.md
           echo "*Built with 💎 Liquid Glass · Powered by ⚡ Virtual Engine · Crafted with ❤️*" >> release_notes.md

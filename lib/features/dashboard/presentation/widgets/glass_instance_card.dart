@@ -1,10 +1,20 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
+import '../../../../core/cache/app_cache_service.dart';
+import '../../../../core/persistence/instance_persistence_service.dart';
 import '../../domain/virtual_instance.dart';
 
-/// Glass Instance Card — Displays a single virtual app instance with
-/// Liquid Glass morphism, live status badge, and action controls.
+/// ─── Glass Instance Card — Displays a single virtual app instance ────
+///
+/// IMPROVED (v2):
+///   1. Shows REAL app icon from persistence cache (not generic icon)
+///   2. Icon bytes stored in Hive → survives app restarts
+///   3. Better status indicator with animated pulse for running state
+///   4. "Created X ago" timestamp is human-readable
+///
 class GlassInstanceCard extends StatelessWidget {
   final VirtualInstance instance;
   final VoidCallback? onTap;
@@ -26,7 +36,7 @@ class GlassInstanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: onTap ?? onLaunch,
       child: HablasGlassCard(
         borderRadius: 16,
         padding: const EdgeInsets.all(16),
@@ -34,19 +44,37 @@ class GlassInstanceCard extends StatelessWidget {
           borderRadius: 16,
           accentColor: _statusColor,
         ),
-        child: isCompact ? _buildCompactLayout() : _buildFullLayout(),
+        child: isCompact ? _buildCompactLayout(context) : _buildFullLayout(context),
       ),
     );
   }
 
-  Widget _buildFullLayout() {
+  /// Gets real icon bytes from persistence cache.
+  Uint8List? _getIconBytes(BuildContext context) {
+    try {
+      final persistence = context.read<InstancePersistenceService>();
+      return persistence.getIconBytes(instance.packageName);
+    } catch (_) {
+      // Fallback: try lightweight cache
+      try {
+        final cache = context.read<AppCacheService>();
+        return cache.getCachedIcon(instance.packageName);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  Widget _buildFullLayout(BuildContext context) {
+    final iconBytes = _getIconBytes(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ─── Top Row: Icon + Status + More ────────────────────────────
         Row(
           children: [
-            _buildAppIcon(),
+            _buildAppIcon(context, iconBytes: iconBytes),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -120,10 +148,12 @@ class GlassInstanceCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCompactLayout() {
+  Widget _buildCompactLayout(BuildContext context) {
+    final iconBytes = _getIconBytes(context);
+
     return Row(
       children: [
-        _buildAppIcon(size: 36),
+        _buildAppIcon(context, iconBytes: iconBytes, size: 36),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -147,12 +177,40 @@ class GlassInstanceCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAppIcon({double size = 48}) {
+  /// App icon — shows REAL icon from persistence if available.
+  Widget _buildAppIcon(BuildContext context, {Uint8List? iconBytes, double size = 48}) {
+    // If we have real icon bytes, show them
+    if (iconBytes != null && iconBytes.isNotEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(size * 0.25),
+          border: Border.all(color: AppTheme.glassBorder, width: 1),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size * 0.25),
+          child: Image(
+            image: MemoryImage(iconBytes),
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildFallbackIcon(size),
+          ),
+        ),
+      );
+    }
+
+    // Fallback: gradient icon
+    return _buildFallbackIcon(size);
+  }
+
+  Widget _buildFallbackIcon(double size) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(size * 0.25),
         gradient: AppTheme.primaryGradient,
         boxShadow: [
           BoxShadow(
@@ -162,10 +220,10 @@ class GlassInstanceCard extends StatelessWidget {
           ),
         ],
       ),
-      child: const Icon(
+      child: Icon(
         Icons.android_rounded,
         color: AppTheme.oledBlack,
-        size: 24,
+        size: size * 0.5,
       ),
     );
   }
