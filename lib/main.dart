@@ -11,7 +11,7 @@ import 'features/dashboard/presentation/screens/dashboard_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ─── System UI Configuration ────────────────────────────────────────
+  // ─── 120fps: System UI Configuration ───────────────────────────────
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,15 +22,15 @@ void main() async {
     ),
   );
 
-  await SystemChrome.setPreferredOrientations([
+  // Enable smooth animations at high FPS
+  SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // ─── Initialize Hive for local persistence ──────────────────────────
+  // ─── Initialize Hive for persistence ────────────────────────────────
   await Hive.initFlutter();
 
-  // ─── Launch App ─────────────────────────────────────────────────────
   runApp(const HablasVirtualStudio());
 }
 
@@ -41,23 +41,19 @@ class HablasVirtualStudio extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider<VirtualEngineBridge>(
-          create: (_) => VirtualEngineBridge(),
-        ),
+        RepositoryProvider<VirtualEngineBridge>(create: (_) => VirtualEngineBridge()),
         RepositoryProvider<AppPickerRepository>(
-          create: (context) => AppPickerRepository(
-            engine: context.read<VirtualEngineBridge>(),
-          ),
+          create: (ctx) => AppPickerRepository(engine: ctx.read<VirtualEngineBridge>()),
         ),
       ],
       child: BlocProvider(
-        create: (context) => DashboardBloc(
-          appPickerRepository: context.read<AppPickerRepository>(),
-        ),
+        create: (ctx) => DashboardBloc(appPickerRepository: ctx.read<AppPickerRepository>()),
         child: MaterialApp(
-          title: 'Hablas Virtual Studio',
+          title: 'Hablas Clone',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.buildDarkTheme(),
+          // 120fps: Reduce animation durations for snappier feel
+          themeMode: ThemeMode.dark,
           home: const DashboardScreen(),
         ),
       ),

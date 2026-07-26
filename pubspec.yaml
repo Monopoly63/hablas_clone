@@ -1,6 +1,6 @@
 name: hablas_virtual_studio
-description: "Hablas Virtual Studio — Unlimited Android app cloning & virtualization platform with Liquid Glass UI"
-version: 1.0.0+1
+description: "Hablas Clone — Unlimited Android app cloning & virtualization with Liquid Glass UI"
+version: 1.1.0+2
 publish_to: 'none'
 
 environment:
@@ -13,9 +13,6 @@ dependencies:
   # State Management
   flutter_bloc: ^8.1.6
   equatable: ^2.0.7
-
-  # UI & Animations
-  flutter_animate: ^4.5.0
 
   # Storage & Persistence
   hive: ^2.2.3
