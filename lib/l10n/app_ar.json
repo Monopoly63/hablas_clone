@@ -1,0 +1,121 @@
+{
+  "@@locale": "ar",
+  "appName": "هابلس كلاون",
+  "appSubtitle": "نسخ التطبيقات — تشغيل متوازي",
+  "permissionsTitle": "الإذونات المطلوبة",
+  "permissionsBody": "هابلس كلاون يحتاج:\n\n🔍 الوصول إلى قائمة تطبيقاتك\n🔔 إذن الإشعارات\n🔋 إبقاء النسخ نشطة\n\nاضغط أدناه لمنح الإذونات.",
+  "grantPermissions": "منح الإذونات",
+  "checkAgain": "فحص مرة أخرى",
+  "openAppSettings": "فتح إعدادات التطبيق",
+  "permissionError": "لم يتم العثور على تطبيقات. يرجى منح إذن QUERY_ALL_PACKAGES.",
+  "appsDiscovered": "{count} تطبيق discovered ✓",
+  "@appsDiscovered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noInstancesYet": "لا توجد نسخ حتى الآن",
+  "noInstancesHint": "اضغط + لنسخ أول تطبيق.\nWhatsApp, Telegram — كلها تعمل بالتوازي.",
+  "cloneApp": "نسخ تطبيق",
+  "searchApps": "بحث التطبيقات...",
+  "systemApps": "تطبيقات النظام",
+  "creatingClone": "جاري إنشاء النسخة...",
+  "appsFound": "{count} تطبيق",
+  "@appsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noAppsFound": "لم يتم العثور على تطبيقات",
+  "tryAgain": "محاولة مرة أخرى",
+  "rename": "إعادة تسمية",
+  "clearCache": "مسح الكاش",
+  "createShortcut": "إنشاء اختصار",
+  "syncEngine": "مزامنة مع المحرك",
+  "delete": "حذف",
+  "deleteConfirm": "هل تريد حذف \"{name}\" نهائيًا؟ لا يمكن التراجع.",
+  "@deleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cancel": "إلغاء",
+  "save": "حفظ",
+  "skip": "تخطي",
+  "newName": "اسم جديد...",
+  "launch": "تشغيل",
+  "terminate": "إيقاف",
+  "retry": "محاولة مرة أخرى",
+  "total": "الإجمالي",
+  "active": "نشط",
+  "storage": "التخزين",
+  "instances": "نسخة",
+  "@instances": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "loading": "جاري التحميل...",
+  "scanningApps": "جاري البحث عن التطبيقات...",
+  "lockTitle": "🔓 فتح هابلس كلاون",
+  "lockSetup": "🔒 تعيين رمز PIN للأمان",
+  "lockSetupHint": "اختر رمز PIN من 4-6 أرقام لحماية نسخك",
+  "lockHint": "أدخل رمز PIN للوصول إلى نسخك",
+  "skipForNow": "تخطي الآن",
+  "wrongPin": "رمز PIN خاطئ. حاول مرة أخرى.",
+  "tooManyAttempts": "عدد المحاولات excessive. يرجى الانتظار.",
+  "failedAttempts": "⚠️ {count} محاولات فاشلة",
+  "@failedAttempts": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingWelcome": "مرحبًا في هابلس كلاون",
+  "onboardingWelcomeHint": "نسخ تطبيقاتك — تشغيل WhatsApp وTelegram بالتوازي على نفس الهاتف",
+  "onboardingPermissions": "الإذونات",
+  "onboardingPermissionsHint": "نحتاج الوصول إلى تطبيقاتك لنسخها. بياناتك محمية.",
+  "onboardingClone": "النسخ",
+  "onboardingCloneHint": "اضغط + واختر أي تطبيق لنسخه. النسخة تعمل بشكل مستقل تمامًا.",
+  "onboardingSecurity": "الأمان",
+  "onboardingSecurityHint": "يمكنك تعيين رمز PIN لحماية نسخك من الوصول غير المصرح.",
+  "next": "التالي",
+  "getStarted": "ابدأ الآن",
+  "stealthMode": "وضع Stealth",
+  "stealthEnabled": "وضع Stealth مفعّل — النسخ مخفية من Launcher",
+  "stealthDisabled": "وضع Stealth معطّل — النسخ ظاهرة في Launcher",
+  "exportData": "تصدير البيانات",
+  "importData": "استيراد البيانات",
+  "exportSuccess": "تم تصدير البيانات بنجاح",
+  "importSuccess": "تم استيراد البيانات بنجاح",
+  "exportError": "فشل تصدير البيانات",
+  "importError": "فشل استيراد البيانات",
+  "workProfile": "Profile العمل",
+  "workProfileAvailable": "Profile العمل متاح على هذا الجهاز",
+  "workProfileNotAvailable": "Profile العمل غير متاح على هذا الجهاز",
+  "workProfileSetup": "إعداد Profile العمل",
+  "workProfileSetupHint": "Profile العمل يتيح نسخ حقيقية مع عزل كامل",
+  "workProfileAlreadySetup": "Profile العمل مُعّد بالفعل",
+  "cloneLabel": "نسخة {number}",
+  "@cloneLabel": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "privacyLock": "قفل الخصوصية",
+  "biometric": "البصمة / الوجه",
+  "pinCode": "رمز PIN",
+  "enableLock": "تفعيل القفل",
+  "disableLock": "إلغاء القفل"
+}

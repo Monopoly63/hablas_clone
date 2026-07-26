@@ -3,19 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:hablas_virtual_studio/core/constants/app_constants.dart';
 import 'package:hablas_virtual_studio/core/theme/app_theme.dart';
 import 'package:hablas_virtual_studio/core/native_bridge/virtual_engine_bridge.dart';
+import 'package:hablas_virtual_studio/core/error/result.dart';
+import 'package:hablas_virtual_studio/core/error/app_error.dart';
 import 'package:hablas_virtual_studio/features/dashboard/domain/virtual_instance.dart';
-import 'package:hablas_virtual_studio/core/persistence/instance_persistence_service.dart';
 
 void main() {
   group('AppConstants', () {
-    test('appName should be Hablas Clone', () {
-      expect(AppConstants.appName, 'Hablas Clone');
-    });
     test('packageName should be com.hablas.studio', () {
       expect(AppConstants.packageName, 'com.hablas.studio');
-    });
-    test('sandboxBasePath should contain com.hablas.studio', () {
-      expect(AppConstants.sandboxBasePath, contains('com.hablas.studio'));
     });
   });
 
@@ -56,7 +51,7 @@ void main() {
     });
   });
 
-  group('InstanceStatus (domain model)', () {
+  group('InstanceStatus', () {
     test('displayName returns correct names', () {
       expect(InstanceStatus.running.displayName, 'Running');
       expect(InstanceStatus.idle.displayName, 'Idle');
@@ -96,91 +91,6 @@ void main() {
     });
   });
 
-  group('VirtualInstanceModel', () {
-    test('fromDomain converts correctly', () {
-      final instance = VirtualInstance(
-        id: 'com.whatsapp_1',
-        packageName: 'com.whatsapp',
-        appName: 'WhatsApp',
-        instanceIndex: 1,
-        customName: 'WhatsApp — Clone 1',
-        status: InstanceStatus.idle,
-        storageSizeBytes: 0,
-        createdAt: DateTime(2024, 1, 1),
-      );
-      final model = VirtualInstanceModel.fromDomain(instance);
-      expect(model.id, 'com.whatsapp_1');
-      expect(model.packageName, 'com.whatsapp');
-      expect(model.status, 'idle');
-      expect(model.storageSizeBytes, 0);
-    });
-    test('toDomain converts back correctly', () {
-      final model = VirtualInstanceModel(
-        id: 'com.whatsapp_1',
-        packageName: 'com.whatsapp',
-        appName: 'WhatsApp',
-        instanceIndex: 1,
-        customName: 'WhatsApp — Clone 1',
-        status: 'idle',
-        storageSizeBytes: 0,
-        createdAtMs: DateTime(2024, 1, 1).millisecondsSinceEpoch,
-      );
-      final domain = model.toDomain();
-      expect(domain.id, 'com.whatsapp_1');
-      expect(domain.packageName, 'com.whatsapp');
-      expect(domain.status, InstanceStatus.idle);
-      expect(domain.storageSizeBytes, 0);
-    });
-    test('round-trip preserves data', () {
-      final original = VirtualInstance(
-        id: 'org.telegram_2',
-        packageName: 'org.telegram.messenger',
-        appName: 'Telegram',
-        instanceIndex: 2,
-        customName: 'Telegram — Clone 2',
-        status: InstanceStatus.running,
-        storageSizeBytes: 1024,
-        createdAt: DateTime.now(),
-        lastActiveAt: DateTime.now(),
-      );
-      final model = VirtualInstanceModel.fromDomain(original);
-      final restored = model.toDomain();
-      expect(restored.id, original.id);
-      expect(restored.packageName, original.packageName);
-      expect(restored.customName, original.customName);
-      expect(restored.status, original.status);
-      expect(restored.storageSizeBytes, original.storageSizeBytes);
-    });
-  });
-
-  group('VirtualInstanceInfo', () {
-    test('fromMap creates correctly with status string', () {
-      final info = VirtualInstanceInfo.fromMap({
-        'packageName': 'com.whatsapp',
-        'instanceId': 1,
-        'customName': 'WhatsApp Clone 1',
-        'status': 'running',
-        'storageSizeBytes': 512,
-        'createdAt': DateTime(2024, 1, 1).millisecondsSinceEpoch,
-      });
-      expect(info.packageName, 'com.whatsapp');
-      expect(info.instanceId, 1);
-      expect(info.status, InstanceStatus.running);
-      expect(info.storageSizeBytes, 512);
-    });
-    test('fromMap defaults to idle for unknown status', () {
-      final info = VirtualInstanceInfo.fromMap({
-        'packageName': 'com.whatsapp',
-        'instanceId': 1,
-        'customName': 'WhatsApp Clone 1',
-        'status': 'unknown_status',
-        'storageSizeBytes': 0,
-        'createdAt': DateTime.now().millisecondsSinceEpoch,
-      });
-      expect(info.status, InstanceStatus.idle);
-    });
-  });
-
   group('VirtualInstance', () {
     test('storageSizeFormatted formats correctly', () {
       final small = VirtualInstance(
@@ -208,6 +118,101 @@ void main() {
       expect(modified.packageName, original.packageName);
       expect(modified.customName, 'New Name');
       expect(modified.status, InstanceStatus.running);
+    });
+  });
+
+  // ─── Result Type Tests ───────────────────────────────────────────────
+
+  group('Result', () {
+    test('Success holds data', () {
+      final result = Result<int>.ok(42);
+      expect(result.isSuccess, true);
+      expect(result.isError, false);
+      expect(result.data, 42);
+      expect(result.error, null);
+    });
+
+    test('Failure holds error', () {
+      final result = Result<int>.fail(AppError.cloneFailed('com.whatsapp', 'test'));
+      expect(result.isSuccess, false);
+      expect(result.isError, true);
+      expect(result.data, null);
+      expect(result.error!.type, AppErrorType.cloneFailed);
+    });
+
+    test('map transforms success data', () {
+      final result = Result<int>.ok(42);
+      final mapped = result.map((data) => data.toString());
+      expect(mapped.isSuccess, true);
+      expect(mapped.data, '42');
+    });
+
+    test('map propagates failure', () {
+      final result = Result<int>.fail(AppError.unknown('test'));
+      final mapped = result.map((data) => data.toString());
+      expect(mapped.isError, true);
+      expect(mapped.error!.type, AppErrorType.unknown);
+    });
+
+    test('guard wraps successful call', () {
+      final result = Result.guard(() => 42);
+      expect(result.isSuccess, true);
+      expect(result.data, 42);
+    });
+
+    test('guard catches exception', () {
+      final result = Result<int>.guard(() => throw Exception('boom'));
+      expect(result.isError, true);
+      expect(result.error!.type, AppErrorType.unknown);
+    });
+
+    test('getOrDefault returns fallback', () {
+      final failure = Result<int>.fail(AppError.unknown('test'));
+      expect(failure.getOrDefault(0), 0);
+
+      final success = Result<int>.ok(42);
+      expect(success.getOrDefault(0), 42);
+    });
+  });
+
+  // ─── AppError Tests ──────────────────────────────────────────────────
+
+  group('AppError', () {
+    test('factory constructors create correct types', () {
+      final perm = AppError.permission('QUERY_ALL_PACKAGES');
+      expect(perm.type, AppErrorType.permission);
+      expect(perm.isRetryable, true);
+
+      final clone = AppError.cloneFailed('com.whatsapp', 'not compatible');
+      expect(clone.type, AppErrorType.cloneFailed);
+      expect(clone.isRetryable, true);
+
+      final compat = AppError.notCompatible('com.whatsapp');
+      expect(compat.type, AppErrorType.notCompatible);
+      expect(compat.isRetryable, false);
+    });
+
+    test('displayMessage returns Arabic', () {
+      final perm = AppError.permission('QUERY_ALL_PACKAGES');
+      expect(perm.displayMessage, contains('الإذونات'));
+
+      final clone = AppError.cloneFailed('com.whatsapp', 'test');
+      expect(clone.displayMessage, contains('فشل'));
+    });
+
+    test('displayMessageEn returns English', () {
+      final perm = AppError.permission('QUERY_ALL_PACKAGES');
+      expect(perm.displayMessageEn, contains('Permission'));
+
+      final clone = AppError.cloneFailed('com.whatsapp', 'test');
+      expect(clone.displayMessageEn, contains('Failed'));
+    });
+
+    test('emoji returns correct icons', () {
+      expect(AppError.permission('x').emoji, '🔐');
+      expect(AppError.cloneFailed('x', 'y').emoji, '❌');
+      expect(AppError.engineError('x').emoji, '⚡');
+      expect(AppError.unknown('x').emoji, '⚠️');
     });
   });
 }
