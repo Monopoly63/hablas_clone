@@ -115,7 +115,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
 
   DashboardBloc({required AppPickerRepository appPickerRepository})
       : _appPickerRepository = appPickerRepository,
-        super(const DashboardState()) {
+        super(DashboardState()) {
     on<LoadDashboard>(_onLoadDashboard);
     on<RefreshDashboard>(_onRefreshDashboard);
     on<LaunchInstance>(_onLaunchInstance);
