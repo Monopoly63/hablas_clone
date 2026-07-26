@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/di/injection_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/glass_decorations.dart';
-import '../bloc/auth_bloc.dart';
+import '../../../core/services/app_state_service.dart';
+import '../../../core/services/security_service.dart';
 
-/// ─── Lock Screen — PIN/Biometric security gate ────────────────────
+/// ─── Lock Screen v2.0.0 — Multi-layer security with real PIN ────────
 ///
-/// Shows before dashboard if security lock is enabled.
-/// Supports:
-///   1. 4-6 digit PIN entry
-///   2. Biometric quick unlock (if enabled)
-///   3. Failed attempt counter with cooldown
+/// KEY FIXES:
+///   1. Checks if lock is actually needed — SKIPS if no PIN set
+///   2. Uses SecurityService for real PIN verification + integrity check
+///   3. Progressive lockout: 5→30s, 10→60s, 15→120s
+///   4. Biometric support placeholder (fingerprint icon)
+///   5. Save lock state to AppStateService
 ///
 class LockScreen extends StatefulWidget {
   final VoidCallback onUnlocked;
@@ -23,106 +24,248 @@ class LockScreen extends StatefulWidget {
 
 class _LockScreenState extends State<LockScreen> {
   String _pin = '';
-  bool _isSetupMode = false; // True if user is setting first PIN
+  bool _isSetupMode = false;
+  bool _isCheckingLock = true;
+  int _lockoutSeconds = 0;
+  String? _setupConfirmPin;
+  bool _isConfirmPhase = false;
 
   @override
   void initState() {
     super.initState();
-    context.read<AuthBloc>().add(CheckLockStatus());
+    _checkLockStatus();
+  }
+
+  /// Check if lock is needed. If no PIN set and lock not enabled, skip.
+  Future<void> _checkLockStatus() async {
+    final security = sl<SecurityService>();
+    final appState = sl<AppStateService>();
+
+    final hasPin = await security.hasPin();
+    final lockEnabled = await security.isLockEnabled();
+    final lockSkipped = appState.isLockSkipped;
+
+    if (!hasPin && !lockEnabled && lockSkipped) {
+      // No lock needed — skip directly to dashboard
+      widget.onUnlocked();
+      return;
+    }
+
+    if (!hasPin) {
+      // No PIN set yet — show setup mode
+      setState(() {
+        _isSetupMode = true;
+        _isCheckingLock = false;
+      });
+      return;
+    }
+
+    // Lock is active — check lockout status
+    final lockout = await security.getLockoutRemainingSeconds();
+    setState(() {
+      _isSetupMode = false;
+      _isCheckingLock = false;
+      _lockoutSeconds = lockout;
+    });
+  }
+
+  Future<void> _submitPin() async {
+    final security = sl<SecurityService>();
+
+    if (_isSetupMode) {
+      if (!_isConfirmPhase) {
+        // First PIN entry — ask for confirmation
+        setState(() {
+          _setupConfirmPin = _pin;
+          _isConfirmPhase = true;
+          _pin = '';
+        });
+        return;
+      }
+
+      // Confirm phase — verify PINs match
+      if (_pin != _setupConfirmPin) {
+        setState(() {
+          _pin = '';
+          _isConfirmPhase = false;
+          _setupConfirmPin = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('PINs don\'t match. Try again.', style: TextStyle(color: AppTheme.neonPink)),
+            backgroundColor: AppTheme.surfaceDark,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // PINs match — set the PIN
+      final result = await security.setPin(_pin);
+      if (result.isSuccess) {
+        // Persist lock state
+        await sl<AppStateService>().setLockEnabled(true);
+        widget.onUnlocked();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.error?.displayMessage ?? 'Failed to set PIN', style: const TextStyle(color: AppTheme.neonPink)),
+            backgroundColor: AppTheme.surfaceDark,
+          ),
+        );
+        setState(() {
+          _pin = '';
+          _isConfirmPhase = false;
+          _setupConfirmPin = null;
+        });
+      }
+    } else {
+      // Verify existing PIN
+      // Check lockout first
+      final lockout = await security.getLockoutRemainingSeconds();
+      if (lockout > 0) {
+        setState(() { _lockoutSeconds = lockout; _pin = ''; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Locked out for ${lockout}s. Too many failed attempts.', style: const TextStyle(color: AppTheme.neonPink)),
+            backgroundColor: AppTheme.surfaceDark,
+          ),
+        );
+        return;
+      }
+
+      final result = await security.verifyPin(_pin);
+      if (result.isSuccess && result.data == true) {
+        // PIN correct — unlock
+        setState(() { _pin = ''; });
+        widget.onUnlocked();
+      } else if (result.isSuccess && result.data == false) {
+        // Wrong PIN
+        final attempts = await security.getFailedAttempts();
+        setState(() { _pin = ''; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Wrong PIN. ${attempts} attempts.', style: const TextStyle(color: AppTheme.neonPink)),
+            backgroundColor: AppTheme.surfaceDark,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      } else {
+        // Error (integrity violation, etc.)
+        setState(() { _pin = ''; });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.error?.displayMessage ?? 'Verification failed', style: const TextStyle(color: AppTheme.neonPink)),
+            backgroundColor: AppTheme.surfaceDark,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  void _onKeyPressed(String digit) {
+    if (_pin.length >= 6) return;
+    if (_lockoutSeconds > 0 && !_isSetupMode) return;
+
+    setState(() => _pin += digit);
+
+    if (_pin.length >= 4) {
+      if (_pin.length == 4) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (_pin.length == 4 && mounted) {
+            _submitPin();
+          }
+        });
+      } else {
+        _submitPin();
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingLock) {
+      return Scaffold(
+        backgroundColor: AppTheme.oledBlack,
+        body: Center(
+          child: const CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.oledBlack,
-      body: BlocConsumer<AuthBloc, AuthState>(
-        listener: (context, state) {
-          if (state.isVerified) {
-            widget.onUnlocked();
-          }
-          if (state.error != null && state.failedAttempts > 0) {
-            // Shake animation on wrong PIN
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(state.error!, style: const TextStyle(color: AppTheme.neonPink)),
-                backgroundColor: AppTheme.surfaceDark,
-                duration: const Duration(seconds: 1),
-              ),
-            );
-          }
-        },
-        builder: (context, state) {
-          _isSetupMode = !state.hasPin;
-          return SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(40),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Logo
-                    Container(
-                      width: 80, height: 80,
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.primaryGradient,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(color: AppTheme.liquidCyan.withOpacity(0.2), blurRadius: 24),
-                        ],
-                      ),
-                      child: const Icon(Icons.lock_rounded, color: AppTheme.oledBlack, size: 40),
-                    ),
-                    const SizedBox(height: 24),
-
-                    Text(
-                      _isSetupMode ? '🔒 Set Security PIN' : '🔒 Unlock Hablas Clone',
-                      style: AppTheme.heading2,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isSetupMode
-                          ? 'Choose a 4-6 digit PIN to protect your clones'
-                          : 'Enter your PIN to access clones',
-                      style: AppTheme.bodySmall,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-
-                    // PIN dots indicator
-                    _buildPinDots(),
-                    const SizedBox(height: 32),
-
-                    // Number pad
-                    _buildNumPad(),
-                    const SizedBox(height: 16),
-
-                    // Skip button (setup mode only)
-                    if (_isSetupMode)
-                      GestureDetector(
-                        onTap: () {
-                          // Skip PIN setup — user doesn't want security
-                          context.read<AuthBloc>().add(SetPin('0000')); // Default, will be disabled
-                          // Actually, let's just unlock without PIN
-                          widget.onUnlocked();
-                        },
-                        child: Text('Skip for now', style: AppTheme.bodySmall.copyWith(color: const Color(0xFF888888))),
-                      ),
-
-                    // Failed attempts warning
-                    if (state.failedAttempts >= 3)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: Text(
-                          '⚠️ ${state.failedAttempts} failed attempts',
-                          style: AppTheme.caption.copyWith(color: AppTheme.neonPink),
-                        ),
-                      ),
-                  ],
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Logo
+                Container(
+                  width: 80, height: 80,
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.primaryGradient,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(color: AppTheme.liquidCyan.withOpacity(0.2), blurRadius: 24),
+                    ],
+                  ),
+                  child: const Icon(Icons.lock_rounded, color: AppTheme.oledBlack, size: 40),
                 ),
-              ),
+                const SizedBox(height: 24),
+
+                // Title
+                Text(
+                  _isSetupMode
+                      ? _isConfirmPhase ? '🔒 Confirm PIN' : '🔒 Set Security PIN'
+                      : '🔒 Unlock Hablas Clone',
+                  style: AppTheme.heading2,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isSetupMode
+                      ? _isConfirmPhase ? 'Re-enter your PIN to confirm' : 'Choose a 4-6 digit PIN'
+                      : 'Enter your PIN to access clones',
+                  style: AppTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+
+                // PIN dots
+                _buildPinDots(),
+                const SizedBox(height: 32),
+
+                // Number pad
+                _buildNumPad(),
+                const SizedBox(height: 16),
+
+                // Skip button (setup mode only)
+                if (_isSetupMode && !_isConfirmPhase)
+                  GestureDetector(
+                    onTap: () async {
+                      // Skip lock — user doesn't want security
+                      await sl<AppStateService>().setLockSkipped();
+                      widget.onUnlocked();
+                    },
+                    child: Text('Skip for now', style: AppTheme.bodySmall.copyWith(color: const Color(0xFF888888))),
+                  ),
+
+                // Lockout warning
+                if (_lockoutSeconds > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text(
+                      '⚠️ Locked out for ${_lockoutSeconds}s',
+                      style: AppTheme.caption.copyWith(color: AppTheme.neonPink),
+                    ),
+                  ),
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -206,35 +349,5 @@ class _LockScreenState extends State<LockScreen> {
         ),
       ),
     );
-  }
-
-  void _onKeyPressed(String digit) {
-    if (_pin.length >= 6) return;
-
-    setState(() => _pin += digit);
-
-    if (_pin.length >= 4) {
-      // Auto-submit when 4 digits entered (or wait for more)
-      // Submit after a brief pause if exactly 4, or immediately if 5-6
-      if (_pin.length == 4) {
-        // Brief delay to allow user to add more digits
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (_pin.length == 4 && mounted) {
-            _submitPin();
-          }
-        });
-      } else {
-        _submitPin();
-      }
-    }
-  }
-
-  void _submitPin() {
-    if (_isSetupMode) {
-      context.read<AuthBloc>().add(SetPin(_pin));
-    } else {
-      context.read<AuthBloc>().add(VerifyPin(_pin));
-    }
-    setState(() => _pin = '');
   }
 }

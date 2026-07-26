@@ -1,7 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import '../../../core/di/injection_container.dart';
+import '../../../core/services/security_service.dart';
+import '../../../core/services/app_state_service.dart';
+import '../../../core/error/result.dart';
+import '../../../core/error/app_error.dart';
 import '../domain/auth_repository.dart';
-import '../../core/error/result.dart';
 
 // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -84,6 +88,7 @@ class AuthState extends Equatable {
 
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final AuthRepository _repository;
+  final SecurityService _security = sl<SecurityService>();
 
   AuthBloc({required AuthRepository repository})
       : _repository = repository,
@@ -97,20 +102,23 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   Future<void> _onCheckLockStatus(CheckLockStatus event, Emitter<AuthState> emit) async {
-    final lockEnabled = await _repository.isLockEnabled();
-    final hasPin = await _repository.hasPin();
-    final biometricEnabled = await _repository.isBiometricEnabled();
+    final lockEnabled = await _security.isLockEnabled();
+    final hasPin = await _security.hasPin();
+    final biometricEnabled = await _security.isBiometricEnabled();
+    final failedAttempts = await _security.getFailedAttempts();
 
     emit(state.copyWith(
       isLockEnabled: lockEnabled,
       hasPin: hasPin,
       biometricEnabled: biometricEnabled,
       isLocked: lockEnabled && !state.isVerified,
+      failedAttempts: failedAttempts,
     ));
   }
 
   Future<void> _onVerifyPin(VerifyPin event, Emitter<AuthState> emit) async {
-    final result = await _repository.verifyPin(event.pin);
+    final result = await _security.verifyPin(event.pin);
+    final attempts = await _security.getFailedAttempts();
 
     if (result.isSuccess && result.data == true) {
       emit(state.copyWith(
@@ -119,20 +127,27 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         failedAttempts: 0,
         error: null,
       ));
-    } else {
-      final newAttempts = state.failedAttempts + 1;
+    } else if (result.isSuccess && result.data == false) {
       emit(state.copyWith(
         isVerified: false,
-        failedAttempts: newAttempts,
-        error: newAttempts >= 5 ? 'Too many attempts. Please wait.' : 'Wrong PIN. Try again.',
+        failedAttempts: attempts,
+        error: attempts >= 5 ? 'Too many attempts. Please wait.' : 'Wrong PIN. Try again.',
+      ));
+    } else {
+      // Error (integrity violation, etc.)
+      emit(state.copyWith(
+        isVerified: false,
+        failedAttempts: attempts,
+        error: result.error?.displayMessage ?? 'Verification failed',
       ));
     }
   }
 
   Future<void> _onSetPin(SetPin event, Emitter<AuthState> emit) async {
-    final result = await _repository.setPin(event.pin);
+    final result = await _security.setPin(event.pin);
 
     if (result.isSuccess) {
+      await sl<AppStateService>().setLockEnabled(true);
       emit(state.copyWith(
         hasPin: true,
         isLockEnabled: true,
@@ -146,9 +161,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   Future<void> _onRemovePin(RemovePin event, Emitter<AuthState> emit) async {
-    final result = await _repository.removePin();
+    final result = await _security.removePin();
 
     if (result.isSuccess) {
+      await sl<AppStateService>().setLockEnabled(false);
       emit(state.copyWith(
         hasPin: false,
         isLockEnabled: false,
@@ -159,7 +175,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   Future<void> _onEnableBiometric(EnableBiometric event, Emitter<AuthState> emit) async {
-    final result = await _repository.setBiometricEnabled(event.enabled);
+    final result = await _security.setBiometricEnabled(event.enabled);
     if (result.isSuccess) {
       emit(state.copyWith(biometricEnabled: event.enabled));
     }

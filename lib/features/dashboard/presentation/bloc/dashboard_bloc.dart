@@ -1,8 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:logger/logger.dart';
 import '../../domain/virtual_instance.dart';
-import '../../../app_picker/domain/installed_app.dart';
 import '../../../app_picker/domain/app_picker_repository.dart';
+import '../../../app_picker/domain/installed_app.dart';
+import '../../../../core/error/result.dart';
+import '../../../../core/error/app_error.dart';
 
 // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -11,10 +14,13 @@ abstract class DashboardEvent extends Equatable {
   List<Object?> get props => [];
 }
 
+/// Load all persisted instances from Hive on startup.
 class LoadDashboard extends DashboardEvent {}
 
+/// Refresh instances — re-scan app sizes and sync with engine.
 class RefreshDashboard extends DashboardEvent {}
 
+/// Launch a virtual instance.
 class LaunchInstance extends DashboardEvent {
   final String instanceId;
   LaunchInstance(this.instanceId);
@@ -22,6 +28,7 @@ class LaunchInstance extends DashboardEvent {
   List<Object?> get props => [instanceId];
 }
 
+/// Terminate a running instance.
 class TerminateInstance extends DashboardEvent {
   final String instanceId;
   TerminateInstance(this.instanceId);
@@ -29,6 +36,7 @@ class TerminateInstance extends DashboardEvent {
   List<Object?> get props => [instanceId];
 }
 
+/// Delete an instance permanently.
 class DeleteInstance extends DashboardEvent {
   final String instanceId;
   DeleteInstance(this.instanceId);
@@ -36,6 +44,7 @@ class DeleteInstance extends DashboardEvent {
   List<Object?> get props => [instanceId];
 }
 
+/// Rename an instance.
 class RenameInstance extends DashboardEvent {
   final String instanceId;
   final String newName;
@@ -44,13 +53,16 @@ class RenameInstance extends DashboardEvent {
   List<Object?> get props => [instanceId, newName];
 }
 
-class CloneNewApp extends DashboardEvent {
+/// Clone a new app — uses AppPickerRepository.cloneApp() for complete flow.
+class CloneApp extends DashboardEvent {
   final String packageName;
-  CloneNewApp(this.packageName);
+  final String appName;
+  CloneApp({required this.packageName, required this.appName});
   @override
-  List<Object?> get props => [packageName];
+  List<Object?> get props => [packageName, appName];
 }
 
+/// Legacy event from AppPickerScreen pop — creates instance from picker result.
 class AppAddedFromPicker extends DashboardEvent {
   final String packageName;
   final String appName;
@@ -60,6 +72,7 @@ class AppAddedFromPicker extends DashboardEvent {
   List<Object?> get props => [packageName, appName, instanceId];
 }
 
+/// Clear cache for an instance.
 class ClearInstanceCache extends DashboardEvent {
   final String instanceId;
   ClearInstanceCache(this.instanceId);
@@ -67,8 +80,10 @@ class ClearInstanceCache extends DashboardEvent {
   List<Object?> get props => [instanceId];
 }
 
+/// Sync with native engine.
 class SyncWithNativeEngine extends DashboardEvent {}
 
+/// Retry last failed action.
 class RetryLastAction extends DashboardEvent {}
 
 // ─── State ───────────────────────────────────────────────────────────────
@@ -77,41 +92,49 @@ class DashboardState extends Equatable {
   final List<VirtualInstance> instances;
   final bool isLoading;
   final String? error;
+  final AppError? detailedError;
   final Map<String, int> totalStorageByApp;
   final bool isSyncing;
   final String? lastFailedAction;
+  final int discoveredAppCount;
 
   DashboardState({
     this.instances = const [],
     this.isLoading = false,
     this.error,
+    this.detailedError,
     this.totalStorageByApp = const {},
     this.isSyncing = false,
     this.lastFailedAction,
+    this.discoveredAppCount = 0,
   });
 
   DashboardState copyWith({
     List<VirtualInstance>? instances,
     bool? isLoading,
     String? error,
+    AppError? detailedError,
     Map<String, int>? totalStorageByApp,
     bool? isSyncing,
     String? lastFailedAction,
+    int? discoveredAppCount,
   }) {
     return DashboardState(
       instances: instances ?? this.instances,
       isLoading: isLoading ?? this.isLoading,
-      error: error,
+      error: error, // error is always reset — pass null to clear
+      detailedError: detailedError,
       totalStorageByApp: totalStorageByApp ?? this.totalStorageByApp,
       isSyncing: isSyncing ?? this.isSyncing,
       lastFailedAction: lastFailedAction ?? this.lastFailedAction,
+      discoveredAppCount: discoveredAppCount ?? this.discoveredAppCount,
     );
   }
 
   Map<String, List<VirtualInstance>> get groupedByPackage {
     final map = <String, List<VirtualInstance>>{};
     for (final instance in instances) {
-      (map[instance.packageName] ?? []).add(instance);
+      (map[instance.packageName] ??= []).add(instance);
     }
     return map;
   }
@@ -126,13 +149,14 @@ class DashboardState extends Equatable {
   bool get isEmpty => instances.isEmpty && !isLoading;
 
   @override
-  List<Object?> get props => [instances, isLoading, error, totalStorageByApp, isSyncing];
+  List<Object?> get props => [instances, isLoading, error, totalStorageByApp, isSyncing, discoveredAppCount];
 }
 
 // ─── BLoC ────────────────────────────────────────────────────────────────
 
 class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   final AppPickerRepository _appPickerRepository;
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   DashboardBloc({required AppPickerRepository appPickerRepository})
       : _appPickerRepository = appPickerRepository,
@@ -143,7 +167,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<TerminateInstance>(_onTerminateInstance);
     on<DeleteInstance>(_onDeleteInstance);
     on<RenameInstance>(_onRenameInstance);
-    on<CloneNewApp>(_onCloneNewApp);
+    on<CloneApp>(_onCloneApp);
     on<AppAddedFromPicker>(_onAppAddedFromPicker);
     on<ClearInstanceCache>(_onClearInstanceCache);
     on<SyncWithNativeEngine>(_onSyncWithNativeEngine);
@@ -161,20 +185,34 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
 
   // ─── Load Dashboard ───────────────────────────────────────────────
 
+  /// CRITICAL: This is called on startup. MUST load from Hive.
   Future<void> _onLoadDashboard(LoadDashboard event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isLoading: true, error: null));
+    _logger.i('📊 Loading dashboard from persistence...');
+
     try {
       final instances = await _appPickerRepository.loadPersistedInstances();
       final storageMap = _computeStorageMap(instances);
+
+      // Also get discovered app count for permission verification
+      final appsResult = await _appPickerRepository.getInstalledApps();
+      final discoveredCount = appsResult.isSuccess ? appsResult.data!.length : 0;
+
+      _logger.i('✅ Dashboard loaded: ${instances.length} instances, ${discoveredCount} apps discovered');
+
       emit(state.copyWith(
         instances: instances,
         isLoading: false,
         totalStorageByApp: storageMap,
+        discoveredAppCount: discoveredCount,
+        error: null,
       ));
     } catch (e) {
+      _logger.e('❌ Failed to load dashboard: $e');
       emit(state.copyWith(
         isLoading: false,
         error: 'Failed to load instances: $e',
+        detailedError: AppError.persistence('loadDashboard'),
         lastFailedAction: 'LoadDashboard',
       ));
     }
@@ -218,6 +256,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       orElse: () => throw StateError('Instance not found: ${event.instanceId}'),
     );
 
+    // Optimistic update: mark as running immediately
     final optimisticUpdated = state.instances.map((i) {
       if (i.id == event.instanceId) {
         return i.copyWith(status: InstanceStatus.running, lastActiveAt: DateTime.now());
@@ -226,12 +265,14 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     }).toList();
     emit(state.copyWith(instances: optimisticUpdated, error: null));
 
-    final success = await _appPickerRepository.launchInstance(
+    // Actually launch via repository
+    final result = await _appPickerRepository.launchInstance(
       instance.packageName,
       instance.instanceIndex,
     );
 
-    if (!success) {
+    if (result.isError || result.data != true) {
+      // Rollback: mark as error
       final rolledBack = state.instances.map((i) {
         if (i.id == event.instanceId) {
           return i.copyWith(status: InstanceStatus.error, lastActiveAt: instance.lastActiveAt);
@@ -241,6 +282,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       emit(state.copyWith(
         instances: rolledBack,
         error: 'Failed to launch ${instance.appName}',
+        detailedError: result.error ?? AppError.engineError('launch failed'),
         lastFailedAction: 'LaunchInstance:${event.instanceId}',
       ));
     }
@@ -315,55 +357,60 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     await _appPickerRepository.persistInstances(updated);
   }
 
-  // ─── Clone New App ────────────────────────────────────────────────
+  // ─── Clone App (v2.0.0 — Complete flow) ──────────────────────────
 
-  Future<void> _onCloneNewApp(CloneNewApp event, Emitter<DashboardState> emit) async {
+  /// Uses AppPickerRepository.cloneApp() which handles the complete flow:
+  /// create → persist → verify.
+  Future<void> _onCloneApp(CloneApp event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isLoading: true, error: null));
-    try {
-      final iconBytes = _appPickerRepository.getIconBytes(event.packageName);
+    _logger.i('🧬 BLoC: Cloning ${event.packageName}...');
 
-      final instanceId = await _appPickerRepository.createInstance(
-        event.packageName,
-        iconBytes: iconBytes,
-      );
+    // Get icon bytes if available
+    final iconBytes = _appPickerRepository.getIconBytes(event.packageName);
 
-      final appName = _appPickerRepository.getAppNameForPackage(event.packageName);
+    final result = await _appPickerRepository.cloneApp(
+      packageName: event.packageName,
+      appName: event.appName,
+      iconBytes: iconBytes,
+    );
+
+    if (result.isSuccess && result.data != null) {
+      final newInstance = result.data!;
       final existingCount = state.instanceCountForPackage(event.packageName);
 
-      final newInstance = VirtualInstance(
-        id: '${event.packageName}_$instanceId',
-        packageName: event.packageName,
-        appName: appName,
-        instanceIndex: instanceId,
+      // Override custom name with proper count
+      final namedInstance = newInstance.copyWith(
         customName: existingCount == 0
-            ? '$appName — Clone 1'
-            : '$appName — Clone ${existingCount + 1}',
-        status: InstanceStatus.idle,
-        storageSizeBytes: 0,
-        createdAt: DateTime.now(),
+            ? '${event.appName} — Clone 1'
+            : '${event.appName} — Clone ${existingCount + 1}',
       );
 
-      final updated = [...state.instances, newInstance];
+      final updated = [...state.instances, namedInstance];
       final storageMap = _computeStorageMap(updated);
+
+      _logger.i('✅ Clone added to dashboard: ${namedInstance.id}');
+
       emit(state.copyWith(
         instances: updated,
         totalStorageByApp: storageMap,
         isLoading: false,
+        error: null,
       ));
-
-      // Persist via repository (which handles Hive internally)
-      await _appPickerRepository.persistInstances(updated);
-    } catch (e) {
+    } else {
+      _logger.e('❌ Clone failed: ${result.error?.message ?? "unknown"}');
       emit(state.copyWith(
         isLoading: false,
-        error: 'Clone failed: $e',
-        lastFailedAction: 'CloneNewApp:${event.packageName}',
+        error: result.error?.displayMessage ?? 'Clone failed',
+        detailedError: result.error ?? AppError.cloneFailed(event.packageName, 'unknown'),
+        lastFailedAction: 'CloneApp:${event.packageName}',
       ));
     }
   }
 
   // ─── App Added from Picker ────────────────────────────────────────
 
+  /// Legacy handler for AppPickerScreen pop result.
+  /// Creates instance and persists immediately.
   Future<void> _onAppAddedFromPicker(AppAddedFromPicker event, Emitter<DashboardState> emit) async {
     final existingCount = state.instanceCountForPackage(event.packageName);
 
@@ -384,7 +431,14 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     final storageMap = _computeStorageMap(updated);
     emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
 
-    await _appPickerRepository.persistInstances(updated);
+    // CRITICAL: Persist immediately and verify
+    final persisted = await _appPickerRepository.persistInstances(updated);
+    if (!persisted) {
+      _logger.e('❌ Failed to persist instances after adding from picker');
+      emit(state.copyWith(error: 'Clone created but data may not be saved'));
+    } else {
+      _logger.i('✅ Instance persisted: ${newInstance.id}');
+    }
   }
 
   // ─── Clear Instance Cache ─────────────────────────────────────────
@@ -405,7 +459,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         instance.packageName,
         instance.instanceIndex,
       );
-
       final updated = state.instances.map((i) {
         if (i.id == event.instanceId) {
           return i.copyWith(storageSizeBytes: newSize);
@@ -449,9 +502,9 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       add(LoadDashboard());
     } else if (action == 'RefreshDashboard') {
       add(RefreshDashboard());
-    } else if (action.startsWith('CloneNewApp:')) {
-      final packageName = action.substring('CloneNewApp:'.length);
-      add(CloneNewApp(packageName));
+    } else if (action.startsWith('CloneApp:')) {
+      final packageName = action.substring('CloneApp:'.length);
+      add(CloneApp(packageName: packageName, appName: _appPickerRepository.getAppNameForPackage(packageName)));
     } else if (action.startsWith('LaunchInstance:')) {
       final instanceId = action.substring('LaunchInstance:'.length);
       add(LaunchInstance(instanceId));
