@@ -1,6 +1,7 @@
 name: Hablas Clone Build & Release
 
-on: push:
+on:
+  push:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
@@ -49,27 +50,27 @@ jobs:
           echo "" >> release_notes.md
           echo "### 🚀 What's New" >> release_notes.md
           echo "- **Hive Persistence**: Cloned instances now survive app restarts!" >> release_notes.md
-          echo "- **Icon Persistence**: App icons stored & displayed across restarts" >> release_notes.md
+          echo "- **Icon Persistence**: App icons stored and displayed across restarts" >> release_notes.md
           echo "- **App Cache Service**: Avoids re-scanning device on every picker open" >> release_notes.md
-          echo "- **Native Engine ↔ Dart Sync**: Instances merged from Hive + native engine on startup" >> release_notes.md
+          echo "- **Native Engine + Dart Sync**: Instances merged from Hive and native engine on startup" >> release_notes.md
           echo "- **Real App Launching**: launchVirtualInstance now ACTUALLY launches apps via Intent" >> release_notes.md
           echo "- **Enhanced Permission Gate**: Verifies QUERY_ALL_PACKAGES works by testing app enumeration" >> release_notes.md
-          echo "- **Optimistic UI Updates**: Launch/terminate show status change before engine confirms arrives" >> release_notes.md
+          echo "- **Optimistic UI Updates**: Launch/terminate show status change before engine confirms" >> release_notes.md
           echo "- **Retry Support**: Failed actions can be retried from dashboard" >> release_notes.md
           echo "- **Clear Cache**: Action wired to instance action sheet" >> release_notes.md
-          echo "- **Clone naming**: 'WhatsApp — Clone 1' instead generic numbering" >> release_notes.md
+          echo "- **Clone naming**: WhatsApp Clone 1 instead of generic numbering" >> release_notes.md
           echo "- **Removed duplicate InstanceStatus enum**: Consolidated to domain model" >> release_notes.md
-          echo "- **Error banner with dashboard**: Shows retry button when actions fail" >> release_notes.md
+          echo "- **Error banner in dashboard**: Shows retry button when actions fail" >> release_notes.md
           echo "" >> release_notes.md
-          echo "### ⚡ Backend/Logic Improvements" >> release_notes.md
+          echo "### Backend/Logic Improvements" >> release_notes.md
           echo "- InstancePersistenceService: Full Hive CRUD for VirtualInstance" >> release_notes.md
           echo "- AppCacheService: 5-minute TTL cache for discovered apps" >> release_notes.md
-          echo "- Native engine: hasLaunchableActivity filter + Intent launch + Kotlin" >> release_notes.md
+          echo "- Native engine: hasLaunchableActivity filter + Intent launch in Kotlin" >> release_notes.md
           echo "- Package validation before creating instances" >> release_notes.md
-          echo "- Instance health monitoring ( periodic native engine sync)" >> release_notes.md
+          echo "- Instance health monitoring with periodic native engine sync" >> release_notes.md
           echo "" >> release_notes.md
           echo "---" >> release_notes.md
-          echo "*Built with 💎 Liquid Glass · Powered by ⚡ Virtual Engine · Crafted with ❤️*" >> release_notes.md
+          echo "*Built with Liquid Glass - Powered by Virtual Engine - Crafted with love*" >> release_notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
