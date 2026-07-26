@@ -258,17 +258,30 @@ class VirtualInstanceModelAdapter extends TypeAdapter<VirtualInstanceModel> {
 
   @override
   VirtualInstanceModel read(BinaryReader reader) {
+    // Read all fields — Hive BinaryReader doesn't have readIntOrNull/readStringOrNull
+    // So we use sentinel values: 0 for null int, '' for null string
+    final id = reader.readString();
+    final packageName = reader.readString();
+    final appName = reader.readString();
+    final instanceIndex = reader.readInt();
+    final customName = reader.readString();
+    final status = reader.readString();
+    final storageSizeBytes = reader.readInt();
+    final createdAtMs = reader.readInt();
+    final lastActiveAtMsRaw = reader.readInt(); // 0 = null
+    final iconPathRaw = reader.readString(); // '' = null
+
     return VirtualInstanceModel(
-      id: reader.readString(),
-      packageName: reader.readString(),
-      appName: reader.readString(),
-      instanceIndex: reader.readInt(),
-      customName: reader.readString(),
-      status: reader.readString(),
-      storageSizeBytes: reader.readInt(),
-      createdAtMs: reader.readInt(),
-      lastActiveAtMs: reader.readIntOrNull(),
-      iconPath: reader.readStringOrNull(),
+      id: id,
+      packageName: packageName,
+      appName: appName,
+      instanceIndex: instanceIndex,
+      customName: customName,
+      status: status,
+      storageSizeBytes: storageSizeBytes,
+      createdAtMs: createdAtMs,
+      lastActiveAtMs: lastActiveAtMsRaw == 0 ? null : lastActiveAtMsRaw,
+      iconPath: iconPathRaw.isEmpty ? null : iconPathRaw,
     );
   }
 
@@ -282,7 +295,7 @@ class VirtualInstanceModelAdapter extends TypeAdapter<VirtualInstanceModel> {
     writer.writeString(obj.status);
     writer.writeInt(obj.storageSizeBytes);
     writer.writeInt(obj.createdAtMs);
-    writer.writeInt(obj.lastActiveAtMs ?? 0); // Hive doesn't have writeIntOrNull
-    writer.writeString(obj.iconPath ?? '');
+    writer.writeInt(obj.lastActiveAtMs ?? 0); // Sentinel: 0 = null
+    writer.writeString(obj.iconPath ?? ''); // Sentinel: '' = null
   }
 }

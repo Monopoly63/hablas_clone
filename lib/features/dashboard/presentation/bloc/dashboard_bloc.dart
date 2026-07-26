@@ -3,7 +3,6 @@ import 'package:equatable/equatable.dart';
 import '../../domain/virtual_instance.dart';
 import '../../../app_picker/domain/installed_app.dart';
 import '../../../app_picker/domain/app_picker_repository.dart';
-import '../../../core/persistence/instance_persistence_service.dart';
 
 // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -78,9 +77,9 @@ class DashboardState extends Equatable {
   final List<VirtualInstance> instances;
   final bool isLoading;
   final String? error;
-  final Map<String, int> totalStorageByApp; // package → total bytes
+  final Map<String, int> totalStorageByApp;
   final bool isSyncing;
-  final String? lastFailedAction; // For retry support
+  final String? lastFailedAction;
 
   DashboardState({
     this.instances = const [],
@@ -94,7 +93,7 @@ class DashboardState extends Equatable {
   DashboardState copyWith({
     List<VirtualInstance>? instances,
     bool? isLoading,
-    String? error, // Explicitly pass null to clear error
+    String? error,
     Map<String, int>? totalStorageByApp,
     bool? isSyncing,
     String? lastFailedAction,
@@ -102,14 +101,13 @@ class DashboardState extends Equatable {
     return DashboardState(
       instances: instances ?? this.instances,
       isLoading: isLoading ?? this.isLoading,
-      error: error, // NOT ?? this.error — so passing null clears it
+      error: error,
       totalStorageByApp: totalStorageByApp ?? this.totalStorageByApp,
       isSyncing: isSyncing ?? this.isSyncing,
       lastFailedAction: lastFailedAction ?? this.lastFailedAction,
     );
   }
 
-  /// Group instances by their parent package.
   Map<String, List<VirtualInstance>> get groupedByPackage {
     final map = <String, List<VirtualInstance>>{};
     for (final instance in instances) {
@@ -118,7 +116,6 @@ class DashboardState extends Equatable {
     return map;
   }
 
-  /// Counts how many instances exist for a specific package.
   int instanceCountForPackage(String packageName) =>
       instances.where((i) => i.packageName == packageName).length;
 
@@ -153,7 +150,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<RetryLastAction>(_onRetryLastAction);
   }
 
-  // ─── Helper: compute storage map ──────────────────────────────────
   Map<String, int> _computeStorageMap(List<VirtualInstance> instances) {
     final storageMap = <String, int>{};
     for (final instance in instances) {
@@ -168,7 +164,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   Future<void> _onLoadDashboard(LoadDashboard event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isLoading: true, error: null));
     try {
-      // Load persisted instances from Hive + sync with native engine
       final instances = await _appPickerRepository.loadPersistedInstances();
       final storageMap = _computeStorageMap(instances);
       emit(state.copyWith(
@@ -190,7 +185,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   Future<void> _onRefreshDashboard(RefreshDashboard event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isSyncing: true));
     try {
-      // Re-fetch storage sizes from native engine
       final updatedInstances = <VirtualInstance>[];
       for (final instance in state.instances) {
         final size = await _appPickerRepository.getStorageSize(
@@ -200,10 +194,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         updatedInstances.add(instance.copyWith(storageSizeBytes: size));
       }
       final storageMap = _computeStorageMap(updatedInstances);
-
-      // Persist updated sizes to Hive
       await _appPickerRepository.persistInstances(updatedInstances);
-
       emit(state.copyWith(
         instances: updatedInstances,
         totalStorageByApp: storageMap,
@@ -227,7 +218,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       orElse: () => throw StateError('Instance not found: ${event.instanceId}'),
     );
 
-    // Optimistic update: show "running" immediately for 120fps feel
     final optimisticUpdated = state.instances.map((i) {
       if (i.id == event.instanceId) {
         return i.copyWith(status: InstanceStatus.running, lastActiveAt: DateTime.now());
@@ -236,14 +226,12 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     }).toList();
     emit(state.copyWith(instances: optimisticUpdated, error: null));
 
-    // Then actually launch via native engine
     final success = await _appPickerRepository.launchInstance(
       instance.packageName,
       instance.instanceIndex,
     );
 
     if (!success) {
-      // Rollback optimistic update
       final rolledBack = state.instances.map((i) {
         if (i.id == event.instanceId) {
           return i.copyWith(status: InstanceStatus.error, lastActiveAt: instance.lastActiveAt);
@@ -257,7 +245,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       ));
     }
 
-    // Persist to Hive
     await _appPickerRepository.persistInstances(state.instances);
   }
 
@@ -269,7 +256,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       orElse: () => throw StateError('Instance not found'),
     );
 
-    // Optimistic update
     final optimisticUpdated = state.instances.map((i) {
       if (i.id == event.instanceId) {
         return i.copyWith(status: InstanceStatus.idle);
@@ -284,7 +270,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     );
 
     if (!success) {
-      // Rollback
       final rolledBack = state.instances.map((i) {
         if (i.id == event.instanceId) {
           return i.copyWith(status: InstanceStatus.running);
@@ -307,12 +292,10 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       (i) => i.id == event.instanceId,
     );
 
-    // Remove immediately from UI
     final updated = state.instances.where((i) => i.id != event.instanceId).toList();
     final storageMap = _computeStorageMap(updated);
     emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
 
-    // Delete from native engine + Hive
     await _appPickerRepository.deleteInstance(
       instance.packageName,
       instance.instanceIndex,
@@ -337,7 +320,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   Future<void> _onCloneNewApp(CloneNewApp event, Emitter<DashboardState> emit) async {
     emit(state.copyWith(isLoading: true, error: null));
     try {
-      // Get icon bytes from cache if available
       final iconBytes = _appPickerRepository.getIconBytes(event.packageName);
 
       final instanceId = await _appPickerRepository.createInstance(
@@ -369,8 +351,8 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         isLoading: false,
       ));
 
-      // Persist to Hive (icon already stored in createInstance)
-      await _persistence.saveInstance(newInstance);
+      // Persist via repository (which handles Hive internally)
+      await _appPickerRepository.persistInstances(updated);
     } catch (e) {
       emit(state.copyWith(
         isLoading: false,
@@ -402,8 +384,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     final storageMap = _computeStorageMap(updated);
     emit(state.copyWith(instances: updated, totalStorageByApp: storageMap, error: null));
 
-    // Persist to Hive
-    await _persistence.saveInstance(newInstance);
+    await _appPickerRepository.persistInstances(updated);
   }
 
   // ─── Clear Instance Cache ─────────────────────────────────────────
@@ -420,7 +401,6 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     );
 
     if (success) {
-      // Refresh storage size after clearing cache
       final newSize = await _appPickerRepository.getStorageSize(
         instance.packageName,
         instance.instanceIndex,
@@ -461,7 +441,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   // ─── Retry ─────────────────────────────────────────────────────────
 
   Future<void> _onRetryLastAction(RetryLastAction event, Emitter<DashboardState> emit) async {
-    emit(state.copyWith(error: null)); // Clear error
+    emit(state.copyWith(error: null));
     final action = state.lastFailedAction;
     if (action == null) return;
 
@@ -477,10 +457,4 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       add(LaunchInstance(instanceId));
     }
   }
-
-  // ─── Persistence reference ( direct calls ──────────────────────
-  // NOTE: We access this via the repository in CloneNewApp. Other events use _persistInstances
-  // through the repository which AppPickerRepository.
-  late InstancePersistenceService _persistence;
-
-
+}

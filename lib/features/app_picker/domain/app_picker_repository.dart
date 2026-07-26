@@ -4,6 +4,7 @@ import '../../dashboard/domain/virtual_instance.dart';
 import '../../../core/native_bridge/virtual_engine_bridge.dart';
 import '../../../core/persistence/instance_persistence_service.dart';
 import '../../../core/cache/app_cache_service.dart';
+import '../../../core/services/app_discovery_service.dart';
 
 /// ─── App Picker Repository — Data layer for app discovery + cloning ──
 ///
