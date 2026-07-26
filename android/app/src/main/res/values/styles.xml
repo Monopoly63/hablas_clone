@@ -11,12 +11,5 @@
         <item name="colorPrimary">@color/liquid_cyan</item>
         <item name="colorPrimaryDark">@color/cobalt_blue</item>
         <item name="colorAccent">@color/neon_emerald</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
-    </style>
-
-    <style name="Theme.HablasStudio.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/oled_black</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
-        <item name="postSplashScreenTheme">@style/Theme.HablasStudio</item>
     </style>
 </resources>
