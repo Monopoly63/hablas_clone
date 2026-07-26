@@ -67,5 +67,21 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- ─── Work Profile Device Admin ──────────────────────────── -->
+        <!-- Required for Work Profile-based app cloning -->
+        <receiver
+            android:name=".engine.workprofile.HablasDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROVISIONING_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>

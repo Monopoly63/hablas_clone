@@ -5,6 +5,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.hablas.studio.engine.VirtualEngineManager
+import com.hablas.studio.engine.workprofile.WorkProfileEngine
 
 /**
  * Hablas Clone — Main Activity
@@ -22,6 +23,7 @@ import com.hablas.studio.engine.VirtualEngineManager
 class MainActivity : FlutterActivity() {
 
     private lateinit var engineManager: VirtualEngineManager
+    private lateinit var workProfileEngine: WorkProfileEngine
 
     companion object {
         private const val ENGINE_CHANNEL = "com.hablas.studio/engine"
@@ -31,6 +33,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         engineManager = VirtualEngineManager(context = this)
+        workProfileEngine = WorkProfileEngine(context = this)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ENGINE_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -124,6 +127,57 @@ class MainActivity : FlutterActivity() {
                             }
                             val success = engineManager.deleteVirtualInstance(packageName, instanceId)
                             result.success(success)
+                        }
+
+                        // ─── Work Profile Operations ────────────────────────
+                        "isWorkProfileSetup" -> {
+                            result.success(workProfileEngine.isWorkProfileSetup())
+                        }
+                        "isWorkProfileAvailable" -> {
+                            result.success(workProfileEngine.isWorkProfileAvailable())
+                        }
+                        "installAppInWorkProfile" -> {
+                            val packageName = call.argument<String>("packageName")
+                            if (packageName == null) {
+                                result.error("INVALID_ARGS", "packageName is required", null)
+                                return@setMethodCallHandler
+                            }
+                            result.success(workProfileEngine.installAppInWorkProfile(packageName))
+                        }
+                        "launchAppInWorkProfile" -> {
+                            val packageName = call.argument<String>("packageName")
+                            if (packageName == null) {
+                                result.error("INVALID_ARGS", "packageName is required", null)
+                                return@setMethodCallHandler
+                            }
+                            result.success(workProfileEngine.launchAppInWorkProfile(packageName))
+                        }
+                        "freezeApp" -> {
+                            val packageName = call.argument<String>("packageName")
+                            if (packageName == null) {
+                                result.error("INVALID_ARGS", "packageName is required", null)
+                                return@setMethodCallHandler
+                            }
+                            result.success(workProfileEngine.freezeApp(packageName))
+                        }
+                        "unfreezeApp" -> {
+                            val packageName = call.argument<String>("packageName")
+                            if (packageName == null) {
+                                result.error("INVALID_ARGS", "packageName is required", null)
+                                return@setMethodCallHandler
+                            }
+                            result.success(workProfileEngine.unfreezeApp(packageName))
+                        }
+                        "removeAppFromWorkProfile" -> {
+                            val packageName = call.argument<String>("packageName")
+                            if (packageName == null) {
+                                result.error("INVALID_ARGS", "packageName is required", null)
+                                return@setMethodCallHandler
+                            }
+                            result.success(workProfileEngine.removeAppFromWorkProfile(packageName))
+                        }
+                        "getWorkProfileApps" -> {
+                            result.success(workProfileEngine.getWorkProfileApps())
                         }
 
                         else -> result.notImplemented()
