@@ -46,7 +46,7 @@ jobs:
         continue-on-error: true
 
       - name: Build Release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: List Build Artifacts
         run: ls -la build/app/outputs/flutter-apk/
