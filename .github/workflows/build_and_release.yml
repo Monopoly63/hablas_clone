@@ -27,61 +27,53 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Verify Flutter Installation
+      - name: Verify Flutter
         run: flutter doctor -v
 
-      - name: Install Dependencies (verbose)
-        run: flutter pub get --verbose
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - name: Analyze Dart Code
+      - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
-        continue-on-error: true
 
-      - name: Run Tests
+      - name: Tests
         run: flutter test || true
-        continue-on-error: true
 
-      - name: Build APK (release with debug signing)
-        run: flutter build apk --release --no-tree-shake-icons || flutter build apk --debug
+      - name: Build Release APK
+        run: flutter build apk --release --no-tree-shake-icons
 
-      - name: List Build Artifacts
-        run: ls -la build/app/outputs/flutter-apk/
-
-      - name: Rename debug APK if needed
+      - name: Verify APK exists
         run: |
-          if [ -f build/app/outputs/flutter-apk/app-debug.apk ]; then
+          ls -la build/app/outputs/flutter-apk/
+          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "❌ Release APK not found! Building debug APK instead..."
+            flutter build apk --debug
             cp build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/flutter-apk/app-release.apk
-            echo "Using debug APK as release (debug signing)"
           fi
-        run: ls -la build/app/outputs/flutter-apk/
+          ls -la build/app/outputs/flutter-apk/app-release.apk
 
       - name: Generate Release Notes
-        id: release_notes
         run: |
           echo "## Hablas Clone v2.0.0 — Production Release 🚀" >> release_notes.md
           echo "" >> release_notes.md
           echo "### 🔥 CRITICAL FIXES" >> release_notes.md
-          echo "- **App no longer resets on restart** — lifecycle state persisted via SharedPreferences" >> release_notes.md
-          echo "- **Cloned apps actually persist** — Hive writes verified after save" >> release_notes.md
-          echo "- **Apps now appear on dashboard** — DI wiring fixed" >> release_notes.md
-          echo "- **AppPickerScreen uses DI services** — no more uninitialized Hive" >> release_notes.md
+          echo "- App no longer resets on restart — lifecycle state persisted" >> release_notes.md
+          echo "- Cloned apps actually persist — Hive writes verified" >> release_notes.md
+          echo "- Apps appear on dashboard — DI wiring fixed" >> release_notes.md
           echo "" >> release_notes.md
-          echo "### 🏗️ Architecture Rewrite" >> release_notes.md
-          echo "- **AppStateService** — Phase persistence (skip completed steps on restart)" >> release_notes.md
-          echo "- **SecurityService** — Multi-layer security: PIN + integrity + anti-tamper" >> release_notes.md
-          echo "- **AppPickerRepository → Singleton** — shared across BLoC + Screens" >> release_notes.md
-          echo "- **Result<T> types** — type-safe error handling" >> release_notes.md
-          echo "- **Bulletproof clone flow** — icon → engine → persist → verify" >> release_notes.md
-          echo "- **Progressive PIN lockout** — 5→30s, 10→60s cooldown" >> release_notes.md
+          echo "### 🏗️ Architecture" >> release_notes.md
+          echo "- AppStateService — skip completed steps on restart" >> release_notes.md
+          echo "- SecurityService — PIN + integrity + anti-tamper" >> release_notes.md
+          echo "- AppPickerRepository → Singleton" >> release_notes.md
+          echo "- Bulletproof clone flow — icon → engine → persist → verify" >> release_notes.md
           echo "" >> release_notes.md
           echo "---" >> release_notes.md
-          echo "*Built with ❤️ — Zero tracking, Privacy-first*" >> release_notes.md
+          echo "*Zero tracking, Privacy-first* 🇦🇪" >> release_notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_notes.md
-          files: |
-            build/app/outputs/flutter-apk/app-release.apk
+          files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
