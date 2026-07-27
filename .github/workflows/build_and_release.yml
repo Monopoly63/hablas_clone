@@ -41,6 +41,10 @@ jobs:
         run: flutter test || true
         continue-on-error: true
 
+      - name: Build Debug APK (for error detection)
+        run: flutter build apk --debug || true
+        continue-on-error: true
+
       - name: Build Release APK
         run: flutter build apk --release
 
