@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/di/injection_container.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/cache/app_cache_service.dart';
@@ -49,15 +49,15 @@ class GlassInstanceCard extends StatelessWidget {
     );
   }
 
-  /// Gets real icon bytes from persistence cache.
+  /// Gets real icon bytes from DI service (not context.read — more reliable).
   Uint8List? _getIconBytes(BuildContext context) {
     try {
-      final persistence = context.read<InstancePersistenceService>();
+      final persistence = sl<InstancePersistenceService>();
       return persistence.getIconBytes(instance.packageName);
     } catch (_) {
       // Fallback: try lightweight cache
       try {
-        final cache = context.read<AppCacheService>();
+        final cache = sl<AppCacheService>();
         return cache.getCachedIcon(instance.packageName);
       } catch (_) {
         return null;

@@ -125,7 +125,7 @@ class AppPickerRepository {
     }
 
     // Step 3: Generate unique instance ID
-    final uniqueId = '${packageName}_$instanceId';
+    var uniqueId = '${packageName}_$instanceId';
 
     // Check for duplicate IDs (edge case: same timestamp)
     if (_persistence.hasInstance(uniqueId)) {
