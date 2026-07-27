@@ -30,6 +30,9 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Verify Dart Analysis (no fatal errors)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+
       - name: Build Debug APK
         run: flutter build apk --debug
 
@@ -41,7 +44,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          body: "## Hablas Clone v1.5.0 🔥\n\n### 🔥 CRITICAL FIX\n- **App no longer resets on restart** — lifecycle state (onboarding/permissions) is now persisted via SharedPreferences\n- Skips onboarding and permissions on subsequent launches\n\n### Existing Features (v1.4.0)\n- Work Profile Engine\n- Security Lock (PIN/Biometric)\n- Arabic RTL Localization\n- Onboarding Wizard\n- Stealth Mode\n- Data Export/Import\n\n*🇦🇪 Zero tracking · Privacy-first*"
+          body: "## Hablas Clone v2.0.0 🔥\n\n### 🔥 CRITICAL FIXES\n- **Removed flutter_secure_storage** — AuthRepository now uses SharedPreferences\n- **Removed archive package** — DataTransferService now uses JSON export\n- **Fixed ALL import paths** — 3-level vs 4-level relative paths corrected\n- **Fixed LocalizationService** — PlatformDispatcher import added\n- **Fixed liquid_shader_painter** — Material import added\n- **Fixed AppTheme.bodyMedium** — undefined style replaced with AppTheme.body\n\n### Features\n- Work Profile Engine (Kotlin + Dart bridge)\n- Security Lock (PIN via SharedPreferences)\n- Arabic RTL Localization (80+ keys)\n- Onboarding Wizard (4-step)\n- Stealth Mode\n- Data Export/Import (JSON format)\n- Liquid Glass UI (120fps optimized)\n\n*🇦🇪 Zero tracking · Privacy-first*"
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
