@@ -1,6 +1,7 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
-import '../../core/error/result.dart';
+import '../../../core/error/result.dart';
+import '../../../core/error/app_error.dart';
 
 /// ─── Auth Repository — PIN/Biometric security lock ────────────────
 ///
@@ -9,16 +10,13 @@ import '../../core/error/result.dart';
 ///   1. PIN code (4-6 digits, user-defined)
 ///   2. Biometric (fingerprint/face — if device supports)
 ///
-/// Uses flutter_secure_storage for encrypted PIN storage.
+/// Uses SharedPreferences for PIN storage (encrypted in future with flutter_secure_storage).
+/// For v1.5.x, we use SharedPreferences to avoid dependency issues.
 ///
 class AuthRepository {
   static const String _pinKey = 'hablas_security_pin';
   static const String _biometricEnabledKey = 'hablas_biometric_enabled';
   static const String _lockEnabledKey = 'hablas_lock_enabled';
-
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
 
   final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
@@ -26,14 +24,15 @@ class AuthRepository {
 
   /// Whether security lock is enabled.
   Future<bool> isLockEnabled() async {
-    final value = await _secureStorage.read(key: _lockEnabledKey);
-    return value == 'true';
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_lockEnabledKey) ?? false;
   }
 
   /// Enable/disable security lock.
   Future<Result<void>> setLockEnabled(bool enabled) async {
     try {
-      await _secureStorage.write(key: _lockEnabledKey, enabled ? 'true' : 'false');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_lockEnabledKey, enabled);
       return Result.ok(null);
     } catch (e) {
       _logger.e('Failed to set lock enabled: $e');
@@ -49,10 +48,11 @@ class AuthRepository {
       if (pin.length < 4 || pin.length > 6) {
         return Result.fail(AppError.security('PIN must be 4-6 digits'));
       }
-      if (!RegExp(r'^[0-9]+$').matches(pin)) {
+      if (!RegExp(r'^[0-9]+$').hasMatch(pin)) {
         return Result.fail(AppError.security('PIN must be digits only'));
       }
-      await _secureStorage.write(key: _pinKey, pin);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pinKey, pin);
       await setLockEnabled(true);
       return Result.ok(null);
     } catch (e) {
@@ -64,7 +64,8 @@ class AuthRepository {
   /// Verify PIN code.
   Future<Result<bool>> verifyPin(String pin) async {
     try {
-      final storedPin = await _secureStorage.read(key: _pinKey);
+      final prefs = await SharedPreferences.getInstance();
+      final storedPin = prefs.getString(_pinKey);
       if (storedPin == null) {
         return Result.fail(AppError.security('No PIN set'));
       }
@@ -78,7 +79,8 @@ class AuthRepository {
   /// Remove PIN code.
   Future<Result<void>> removePin() async {
     try {
-      await _secureStorage.delete(key: _pinKey);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_pinKey);
       await setLockEnabled(false);
       return Result.ok(null);
     } catch (e) {
@@ -88,8 +90,8 @@ class AuthRepository {
 
   /// Whether a PIN has been set.
   Future<bool> hasPin() async {
-    final value = await _secureStorage.read(key: _pinKey);
-    return value != null;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_pinKey) != null;
   }
 
   // ─── Biometric ──────────────────────────────────────────────────────
@@ -97,7 +99,8 @@ class AuthRepository {
   /// Enable/disable biometric unlock.
   Future<Result<void>> setBiometricEnabled(bool enabled) async {
     try {
-      await _secureStorage.write(key: _biometricEnabledKey, enabled ? 'true' : 'false');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_biometricEnabledKey, enabled);
       return Result.ok(null);
     } catch (e) {
       return Result.fail(AppError.security('Failed to save biometric setting'));
@@ -106,7 +109,7 @@ class AuthRepository {
 
   /// Whether biometric unlock is enabled.
   Future<bool> isBiometricEnabled() async {
-    final value = await _secureStorage.read(key: _biometricEnabledKey);
-    return value == 'true';
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricEnabledKey) ?? false;
   }
 }

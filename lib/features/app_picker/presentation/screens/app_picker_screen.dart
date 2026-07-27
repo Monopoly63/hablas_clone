@@ -6,7 +6,7 @@ import '../../../../core/services/app_discovery_service.dart';
 import '../../../../core/native_bridge/virtual_engine_bridge.dart';
 import '../../../../core/cache/app_cache_service.dart';
 import '../../../../core/persistence/instance_persistence_service.dart';
-import '../../../../features/app_picker/domain/app_picker_repository.dart';
+
 
 /// ─── App Picker Screen — Shows REAL installed apps with icons ────────
 ///

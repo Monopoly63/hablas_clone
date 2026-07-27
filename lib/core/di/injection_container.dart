@@ -5,7 +5,7 @@ import '../persistence/instance_persistence_service.dart';
 import '../cache/app_cache_service.dart';
 import '../services/app_discovery_service.dart';
 import '../services/app_state_service.dart';
-import '../l10n/localization_service.dart';
+import '../../l10n/localization_service.dart';
 import '../error/result.dart';
 import '../../features/app_picker/domain/app_picker_repository.dart';
 import '../../features/dashboard/domain/virtual_instance.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import '../domain/auth_repository.dart';
-import '../../core/error/result.dart';
+import '../../domain/auth_repository.dart';
+import '../../../../core/error/result.dart';
 
 // ─── Events ──────────────────────────────────────────────────────────────
 

@@ -1,27 +1,28 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:archive/archive.dart';
 import 'package:logger/logger.dart';
 import '../../core/error/result.dart';
 import '../../core/error/app_error.dart';
-import '../../features/dashboard/domain/virtual_instance.dart';
 
-/// ─── Data Transfer Service — Export/Import clone data as ZIP ──────
+/// ─── Data Transfer Service — Export/Import clone data as JSON ──────
 ///
 /// Allows users to backup their clone instances and icons before
 /// uninstalling, then restore after reinstalling.
 ///
-/// Export format: ZIP containing:
-///   - instances.json — List of VirtualInstance data
-///   - icons/ — PNG icon files per package name
-///   - metadata.json — App version, export timestamp
+/// Export format (v1.x — no ZIP dependency):
+///   - hablas_backup.json — List of VirtualInstance data + metadata
+///   - icons/ — PNG icon files per package name (saved as separate files)
+///
+/// NOTE: ZIP compression removed for v1.5.x to avoid `archive` package
+/// dependency issues. Will be re-added in v2.x when CI is stable.
 ///
 class DataTransferService {
   final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
-  /// Exports all clone data to a ZIP file in the user's Downloads folder.
+  /// Exports all clone data to a JSON file + icon files in a directory.
   Future<Result<String>> exportData() async {
     try {
       // 1. Load all instances from Hive
@@ -31,89 +32,101 @@ class DataTransferService {
       final instances = instancesBox.values.toList();
       final iconEntries = iconsBox.toMap();
 
-      // 2. Create archive
-      final archive = Archive();
+      // 2. Create export directory
+      final exportDir = await _getExportDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final backupDir = Directory('${exportDir.path}/hablas_backup_$timestamp');
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+      }
 
-      // Add instances.json
-      final instancesJson = _encodeInstances(instances);
-      archive.addFile(ArchiveFile('instances.json', instancesJson.length, instancesJson));
+      // 3. Save instances as JSON
+      final instancesList = instances.map((raw) {
+        if (raw is Map<String, dynamic>) return raw;
+        return {'id': raw.toString()};
+      }).toList();
 
-      // Add icons
+      final metadata = {
+        'version': '1.5.1',
+        'exportedAt': timestamp,
+        'instanceCount': instances.length,
+      };
+
+      final backupJson = jsonEncode({
+        'instances': instancesList,
+        'metadata': metadata,
+      });
+
+      final jsonFile = File('${backupDir.path}/instances.json');
+      await jsonFile.writeAsString(backupJson);
+
+      // 4. Save icons as separate PNG files
+      final iconsDir = Directory('${backupDir.path}/icons');
+      if (!await iconsDir.exists()) {
+        await iconsDir.create(recursive: true);
+      }
+
       for (final entry in iconEntries.entries) {
         final packageName = entry.key.toString();
         final iconData = entry.value;
         if (iconData is List) {
           final bytes = Uint8List.fromList(iconData.cast<int>());
-          archive.addFile(ArchiveFile('icons/$packageName.png', bytes.length, bytes));
+          final iconFile = File('${iconsDir.path}/$packageName.png');
+          await iconFile.writeAsBytes(bytes);
         }
       }
 
-      // Add metadata
-      final metadataJson = '{"version":"1.4.0","exportedAt":${DateTime.now().millisecondsSinceEpoch},"instanceCount":${instances.length}}';
-      archive.addFile(ArchiveFile('metadata.json', metadataJson.length, metadataJson));
-
-      // 3. Encode as ZIP
-      final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) {
-        return Result.fail(AppError.persistence('export'));
-      }
-
-      // 4. Write to Downloads folder
-      final downloadsDir = await _getExportDirectory();
-      final filename = 'hablas_clone_backup_${DateTime.now().millisecondsSinceEpoch}.zip';
-      final filePath = '${downloadsDir.path}/$filename';
-
-      final file = File(filePath);
-      await file.writeAsBytes(zipData);
-
-      _logger.i('Exported ${instances.length} instances to $filePath');
-      return Result.ok(filePath);
+      _logger.i('Exported ${instances.length} instances to ${backupDir.path}');
+      return Result.ok(backupDir.path);
     } catch (e) {
       _logger.e('Export failed: $e');
       return Result.fail(AppError.unknown('Export failed: $e'));
     }
   }
 
-  /// Imports clone data from a ZIP file, restoring instances and icons.
-  Future<Result<int>> importData(String zipFilePath) async {
+  /// Imports clone data from a backup directory.
+  Future<Result<int>> importData(String backupDirPath) async {
     try {
-      // 1. Read ZIP file
-      final file = File(zipFilePath);
-      if (!await file.exists()) {
+      final backupDir = Directory(backupDirPath);
+      if (!await backupDir.exists()) {
         return Result.fail(AppError.persistence('import'));
       }
 
-      final zipBytes = await file.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(zipBytes);
-
-      // 2. Verify metadata
-      final metadataFile = archive.findFile('metadata.json');
-      if (metadataFile == null) {
+      // 1. Read JSON file
+      final jsonFile = File('${backupDir.path}/instances.json');
+      if (!await jsonFile.exists()) {
         return Result.fail(AppError.persistence('import'));
       }
 
-      // 3. Parse instances
-      final instancesFile = archive.findFile('instances.json');
-      if (instancesFile == null) {
-        return Result.fail(AppError.persistence('import'));
-      }
+      final jsonContent = await jsonFile.readAsString();
+      final decoded = jsonDecode(jsonContent) as Map<String, dynamic>;
 
-      final instancesJson = String.fromCharCodes(instancesFile.content);
-      final importedInstances = _decodeInstances(instancesJson);
+      final importedInstances = (decoded['instances'] as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .toList();
 
-      // 4. Write to Hive
+      // 2. Write to Hive
       final instancesBox = Hive.box<dynamic>('hablas_instances');
       final iconsBox = Hive.box<dynamic>('hablas_icons');
 
       for (final instance in importedInstances) {
-        await instancesBox.put(instance['id'], instance);
+        final id = instance['id'] as String?;
+        if (id != null) {
+          await instancesBox.put(id, instance);
+        }
       }
 
-      // 5. Restore icons
-      for (final archiveFile in archive) {
-        if (archiveFile.name.startsWith('icons/')) {
-          final packageName = archiveFile.name.replaceAll('icons/', '').replaceAll('.png', '');
-          await iconsBox.put(packageName, archiveFile.content);
+      // 3. Restore icons
+      final iconsDir = Directory('${backupDir.path}/icons');
+      if (await iconsDir.exists()) {
+        for (final iconFile in iconsDir.listSync()) {
+          if (iconFile.path.endsWith('.png')) {
+            final packageName = iconFile.path
+                .replaceAll('${iconsDir.path}/', '')
+                .replaceAll('.png', '');
+            final bytes = await File(iconFile.path).readAsBytes();
+            await iconsBox.put(packageName, bytes.toList());
+          }
         }
       }
 
@@ -140,26 +153,5 @@ class DataTransferService {
 
     // Last fallback: temporary directory
     return await getTemporaryDirectory();
-  }
-
-  String _encodeInstances(List<dynamic> instances) {
-    final encoded = instances.map((raw) {
-      if (raw is Map<String, dynamic>) {
-        return raw;
-      }
-      // Convert VirtualInstanceModel or other types to map
-      return {'id': raw.toString()};
-    }).toList();
-    return '{"instances":${encoded.toString()}}';
-  }
-
-  List<Map<String, dynamic>> _decodeInstances(String json) {
-    // Simple JSON decode — in production use dart:convert
-    try {
-      // For now, return empty — real implementation needs proper JSON parsing
-      return [];
-    } catch (_) {
-      return [];
-    }
   }
 }

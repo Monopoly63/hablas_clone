@@ -9,7 +9,7 @@ import 'core/native_bridge/work_profile_bridge.dart';
 import 'core/persistence/instance_persistence_service.dart';
 import 'core/cache/app_cache_service.dart';
 import 'core/permissions/permission_gate.dart';
-import 'core/l10n/localization_service.dart';
+import 'l10n/localization_service.dart';
 import 'features/app_picker/domain/app_picker_repository.dart';
 import 'features/auth/domain/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/theme/glass_decorations.dart';
-import '../../../core/theme/animated_liquid_background.dart';
-import '../../../l10n/localization_service.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/glass_decorations.dart';
+import '../../../../core/theme/animated_liquid_background.dart';
+import '../../../../l10n/localization_service.dart';
 
 /// ─── Onboarding Wizard — 4-step professional introduction ──────────
 ///
@@ -91,7 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingWelcomeHint'),
-              style: AppTheme.bodyMedium,
+              style: AppTheme.body,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 40),
@@ -135,7 +135,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingPermissionsHint'),
-              style: AppTheme.bodyMedium,
+              style: AppTheme.body,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -190,7 +190,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingCloneHint'),
-              style: AppTheme.bodyMedium,
+              style: AppTheme.body,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
@@ -228,7 +228,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingSecurityHint'),
-              style: AppTheme.bodyMedium,
+              style: AppTheme.body,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
