@@ -3,14 +3,14 @@ library;
 
 class AppConstants {
   // ─── Branding ───────────────────────────────────────────────────────
-  static const String appName = 'Hablas Clone';
+  static const String appName = 'Hablas Virtual Studio';
   static const String appBrand = 'Hablas';
   static const String packageName = 'com.hablas.studio';
   static const String engineChannel = 'com.hablas.studio/engine';
 
   // ─── Version ────────────────────────────────────────────────────────
-  static const String version = '2.0.0';
-  static const int buildNumber = 7;
+  static const String version = '1.0.0';
+  static const int buildNumber = 1;
 
   // ─── Limits ─────────────────────────────────────────────────────────
   /// Theoretical max instances — no hard cap, but we show a soft warning.

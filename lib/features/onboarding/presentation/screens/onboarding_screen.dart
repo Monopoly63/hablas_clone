@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
-import '../../../core/di/injection_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/glass_decorations.dart';
 import '../../../core/theme/animated_liquid_background.dart';
 import '../../../l10n/localization_service.dart';
-import '../../../core/services/app_state_service.dart';
 
-/// ─── Onboarding Wizard v2.0.0 — Skips if already completed ──────────
+/// ─── Onboarding Wizard — 4-step professional introduction ──────────
 ///
-/// KEY FIX: In v1.x, onboarding ALWAYS showed on startup because
-/// there was no state persistence. v2.0.0 saves onboarding_completed
-/// to SharedPreferences so it's skipped on subsequent launches.
+/// Steps:
+///   1. Welcome — Brand intro + key value proposition
+///   2. Permissions — Why we need permissions + promise
+///   3. Cloning — How to clone + what happens
+///   4. Security — PIN/Biometric lock offer
 ///
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onComplete;
@@ -30,13 +30,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  /// Complete onboarding and persist state.
-  void _completeOnboarding() {
-    // PERSIST onboarding completion — next launch skips this screen
-    sl<AppStateService>().setOnboardingCompleted();
-    widget.onComplete();
   }
 
   @override
@@ -77,6 +70,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Brand icon
             Container(
               width: 120, height: 120,
               decoration: BoxDecoration(
@@ -97,10 +91,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingWelcomeHint'),
-              style: AppTheme.body,
+              style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 40),
+            // Quick feature highlights
             Wrap(
               spacing: 12, runSpacing: 12,
               alignment: WrapAlignment.center,
@@ -140,10 +135,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingPermissionsHint'),
-              style: AppTheme.body,
+              style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            // Permission cards
             _permissionCard('🔍', 'App List Access', 'To find apps you can clone'),
             const SizedBox(height: 8),
             _permissionCard('🔔', 'Notifications', 'To alert you about clone status'),
@@ -194,10 +190,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingCloneHint'),
-              style: AppTheme.body,
+              style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            // Clone flow visualization
             _flowStep('1', 'Tap + button', Icons.add_rounded),
             _flowStep('2', 'Choose app', Icons.list_rounded),
             _flowStep('3', 'Clone created!', Icons.check_circle_rounded),
@@ -231,10 +228,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: 16),
             Text(
               _loc.get('onboardingSecurityHint'),
-              style: AppTheme.body,
+              style: AppTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            // Security options
             _securityOption(Icons.pin_rounded, 'PIN Code', '4-6 digit code', AppTheme.liquidCyan),
             const SizedBox(height: 12),
             _securityOption(Icons.fingerprint_rounded, 'Biometric', 'Fingerprint or Face ID', AppTheme.neonEmerald),
@@ -246,7 +244,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  // ─── Helpers ────────────────────────────────────────────────
+  // ─── Helpers ────────────────────────────────────────────────────────
 
   Widget _featureChip(String emoji, String label) {
     return Container(
@@ -326,17 +324,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  // ─── Bottom Bar ────────────────────────────────────────────
+  // ─── Bottom Bar ────────────────────────────────────────────────────
 
   Widget _buildBottomBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Row(
         children: [
-          // Skip — completes onboarding immediately
+          // Skip
           if (_step < 3)
             GestureDetector(
-              onTap: _completeOnboarding,
+              onTap: widget.onComplete,
               child: Text(_loc.get('skip'), style: AppTheme.bodySmall.copyWith(color: const Color(0xFF888888))),
             ),
           const Spacer(),
@@ -359,7 +357,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               if (_step < 3) {
                 _controller.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
               } else {
-                _completeOnboarding();
+                widget.onComplete();
               }
             },
             child: Container(

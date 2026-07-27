@@ -1,24 +1,25 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/di/injection_container.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/glass_decorations.dart';
 import '../../../../core/theme/animated_liquid_background.dart';
+import '../../../../core/services/app_discovery_service.dart';
 import '../../../../core/persistence/instance_persistence_service.dart';
 import '../../domain/virtual_instance.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../widgets/glass_instance_card.dart';
 import '../../../app_picker/presentation/screens/app_picker_screen.dart';
 
-/// ─── Dashboard Screen v2.0.0 — Real persistence, real clones ────────
+/// ─── Dashboard Screen — 120fps Optimized ────────────────────────────
 ///
-/// KEY FIXES:
-///   1. Dashboard ALWAYS loads from Hive on startup
-///   2. App picker result → immediate persist → verify
-///   3. Shows discovered app count for permission verification
-///   4. Error recovery with detailed AppError info
-///   5. Clone flow is bulletproof — icon → engine → persist → verify
+/// IMPROVED (v2):
+///   1. Clear Cache action is now wired to BLoC event
+///   2. App picker returns icon bytes → stored in persistence
+///   3. Shows error banner with retry button
+///   4. "Retry" floating action when last action failed
+///   5. Instance count per-package in group header
 ///
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -31,7 +32,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    // Load persisted instances on startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DashboardBloc>().add(LoadDashboard());
     });
@@ -45,6 +45,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             children: [
               _buildAppBar(),
+              // Error banner
               BlocBuilder<DashboardBloc, DashboardState>(
                 builder: (context, state) {
                   if (state.hasError) return _buildErrorBanner(state);
@@ -125,21 +126,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildTitle() {
-    return BlocBuilder<DashboardBloc, DashboardState>(
-      builder: (context, state) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Hablas Clone', style: AppTheme.heading2),
-            Text(
-              state.discoveredAppCount > 0
-                  ? '${state.totalInstanceCount} clones · ${state.discoveredAppCount} apps'
-                  : 'Virtual Studio',
-              style: AppTheme.bodySmall,
-            ),
-          ],
-        );
-      },
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Hablas Clone', style: AppTheme.heading2),
+        Text('Virtual Studio', style: AppTheme.bodySmall),
+      ],
     );
   }
 
@@ -168,7 +160,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
         if (state.isLoading) return _buildLoading();
-        if (state.instances.isEmpty) return _buildEmpty(state);
+        if (state.instances.isEmpty) return _buildEmpty();
         return _buildInstanceList(state);
       },
     );
@@ -181,14 +173,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           CircularProgressIndicator(color: AppTheme.liquidCyan, strokeWidth: 2),
           SizedBox(height: 16),
-          Text('Loading your clones...', style: AppTheme.bodySmall),
+          Text('Loading instances...', style: AppTheme.bodySmall),
         ],
       ),
     );
   }
 
-  Widget _buildEmpty(DashboardState state) {
-    final hasApps = state.discoveredAppCount > 0;
+  Widget _buildEmpty() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -207,17 +198,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.oledBlack, size: 40),
             ),
             const SizedBox(height: 24),
-            const Text('No Clones Yet', style: AppTheme.heading2),
+            const Text('No Virtual Instances Yet', style: AppTheme.heading2),
             const SizedBox(height: 8),
-            Text(
-              hasApps
-                  ? 'Tap + to clone your first app.\n${state.discoveredAppCount} apps available on your device.'
-                  : 'Tap + to clone your first app.\nNo apps detected — check permissions.',
+            const Text(
+              'Tap + to clone your first app.\n'
+              'WhatsApp, Telegram — all running in parallel.',
               style: AppTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
-            if (hasApps) _buildQuickStartChips(),
+            _buildQuickStartChips(),
           ],
         ),
       ),
@@ -233,7 +223,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Wrap(
       spacing: 8, runSpacing: 8,
       children: apps.map((app) => GestureDetector(
-        onTap: () => context.read<DashboardBloc>().add(CloneApp(packageName: app.$2, appName: app.$1)),
+        onTap: () => context.read<DashboardBloc>().add(CloneNewApp(app.$2)),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: GlassDecorations.glassCard(borderRadius: 10, fillColor: AppTheme.glassFillSubtle),
@@ -278,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildStatsBar(DashboardState state) {
     return Row(children: [
-      _buildStatCard(Icons.layers_rounded, '${state.totalInstanceCount}', 'Clones', AppTheme.liquidCyan),
+      _buildStatCard(Icons.layers_rounded, '${state.totalInstanceCount}', 'Total', AppTheme.liquidCyan),
       const SizedBox(width: 10),
       _buildStatCard(Icons.play_circle_outline_rounded, '${state.runningInstanceCount}', 'Active', AppTheme.neonEmerald),
       const SizedBox(width: 10),
@@ -308,7 +298,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       Row(children: [
         Text(packageName.split('.').last.toUpperCase(), style: AppTheme.accentLabel),
         const SizedBox(width: 8),
-        Text('${instances.length} clone${instances.length > 1 ? "s" : ""}', style: AppTheme.caption),
+        Text('${instances.length} instance${instances.length > 1 ? "s" : ""}', style: AppTheme.caption),
         const Spacer(),
         Text(_formatBytes(totalStorage), style: AppTheme.bodySmall.copyWith(color: AppTheme.cobaltBlue)),
       ]),
@@ -341,7 +331,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ─── Navigation to App Picker ────────────────────────────────────────
+  // ─── Navigation ─────────────────────────────────────────────────────
 
   void _openAppPicker() async {
     final result = await Navigator.of(context).push(
@@ -352,6 +342,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (mounted && result != null) {
+      // Safely extract data — handle any type
       String packageName = '';
       String appName = '';
       int instanceId = DateTime.now().millisecondsSinceEpoch % 100000;
@@ -366,18 +357,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           instanceId = int.tryParse(rawId.toString()) ?? instanceId;
         }
 
-        // Save icon bytes from picker result
+        // Store icon bytes if available
         final rawIcon = result['iconBytes'];
         if (rawIcon is Uint8List && rawIcon.isNotEmpty) {
           try {
-            final persistence = sl<InstancePersistenceService>();
+            final persistence = context.read<InstancePersistenceService>();
             await persistence.saveIconBytes(packageName, rawIcon);
-          } catch (_) {}
+          } catch (_) {
+            // Icon persistence failed — clone still works
+          }
         }
       }
 
       if (packageName.isNotEmpty) {
-        // Use the legacy AppAddedFromPicker event for compatibility
         context.read<DashboardBloc>().add(AppAddedFromPicker(
           packageName: packageName,
           appName: appName,
@@ -422,12 +414,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.play_arrow_rounded, color: AppTheme.neonEmerald),
-                title: Text('Launch', style: AppTheme.body.copyWith(color: AppTheme.neonEmerald)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.read<DashboardBloc>().add(LaunchInstance(instance.id));
-                },
+                leading: const Icon(Icons.shortcut_rounded, color: AppTheme.neonEmerald),
+                title: Text('Create Shortcut', style: AppTheme.body.copyWith(color: AppTheme.neonEmerald)),
+                onTap: () => Navigator.pop(ctx),
               ),
               ListTile(
                 leading: const Icon(Icons.refresh_rounded, color: AppTheme.liquidCyan),

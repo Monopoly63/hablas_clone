@@ -6,15 +6,11 @@ import 'package:hablas_virtual_studio/core/native_bridge/virtual_engine_bridge.d
 import 'package:hablas_virtual_studio/core/error/result.dart';
 import 'package:hablas_virtual_studio/core/error/app_error.dart';
 import 'package:hablas_virtual_studio/features/dashboard/domain/virtual_instance.dart';
-import 'package:hablas_virtual_studio/core/services/app_state_service.dart';
 
 void main() {
   group('AppConstants', () {
     test('packageName should be com.hablas.studio', () {
       expect(AppConstants.packageName, 'com.hablas.studio');
-    });
-    test('version should be 2.0.0', () {
-      expect(AppConstants.version, '2.0.0');
     });
   });
 
@@ -82,19 +78,53 @@ void main() {
         'packageName': 'com.whatsapp',
         'appName': 'WhatsApp',
         'iconPath': null,
-        'versionName': '2.22',
+        'versionName': '2.23',
         'isSystemApp': false,
       });
       expect(info.packageName, 'com.whatsapp');
       expect(info.appName, 'WhatsApp');
-      expect(info.isSystemApp, false);
+    });
+    test('equality is based on packageName', () {
+      const a = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WhatsApp');
+      const b = InstalledAppInfo(packageName: 'com.whatsapp', appName: 'WA');
+      expect(a, equals(b));
     });
   });
 
-  // ─── Result<T> Tests ─────────────────────────────────────────────────
+  group('VirtualInstance', () {
+    test('storageSizeFormatted formats correctly', () {
+      final small = VirtualInstance(
+        id: 'test_1', packageName: 'test', appName: 'test',
+        instanceIndex: 1, customName: 'test', status: InstanceStatus.idle,
+        storageSizeBytes: 512, createdAt: DateTime.now(),
+      );
+      expect(small.storageSizeFormatted, '512 B');
+
+      final kb = small.copyWith(storageSizeBytes: 1536);
+      expect(kb.storageSizeFormatted, '1.5 KB');
+
+      final mb = small.copyWith(storageSizeBytes: 1048576);
+      expect(mb.storageSizeFormatted, '1.0 MB');
+    });
+
+    test('copyWith preserves identity fields', () {
+      final original = VirtualInstance(
+        id: 'test_1', packageName: 'test', appName: 'test',
+        instanceIndex: 1, customName: 'test', status: InstanceStatus.idle,
+        storageSizeBytes: 0, createdAt: DateTime.now(),
+      );
+      final modified = original.copyWith(customName: 'New Name', status: InstanceStatus.running);
+      expect(modified.id, original.id);
+      expect(modified.packageName, original.packageName);
+      expect(modified.customName, 'New Name');
+      expect(modified.status, InstanceStatus.running);
+    });
+  });
+
+  // ─── Result Type Tests ───────────────────────────────────────────────
 
   group('Result', () {
-    test('Success is isSuccess', () {
+    test('Success holds data', () {
       final result = Result<int>.ok(42);
       expect(result.isSuccess, true);
       expect(result.isError, false);
@@ -102,12 +132,12 @@ void main() {
       expect(result.error, null);
     });
 
-    test('Failure is isError', () {
-      final result = Result<int>.fail(AppError.unknown('test'));
+    test('Failure holds error', () {
+      final result = Result<int>.fail(AppError.cloneFailed('com.whatsapp', 'test'));
       expect(result.isSuccess, false);
       expect(result.isError, true);
       expect(result.data, null);
-      expect(result.error!.type, AppErrorType.unknown);
+      expect(result.error!.type, AppErrorType.cloneFailed);
     });
 
     test('map transforms success data', () {
@@ -183,52 +213,6 @@ void main() {
       expect(AppError.cloneFailed('x', 'y').emoji, '❌');
       expect(AppError.engineError('x').emoji, '⚡');
       expect(AppError.unknown('x').emoji, '⚠️');
-    });
-  });
-
-  // ─── AppPhase Tests ──────────────────────────────────────────────────
-
-  group('AppPhase', () {
-    test('name returns correct strings', () {
-      expect(AppPhase.onboarding.name, 'onboarding');
-      expect(AppPhase.permissions.name, 'permissions');
-      expect(AppPhase.lock.name, 'lock');
-      expect(AppPhase.dashboard.name, 'dashboard');
-    });
-
-    test('displayName returns formatted strings', () {
-      expect(AppPhase.onboarding.displayName, contains('Onboarding'));
-      expect(AppPhase.dashboard.displayName, contains('Dashboard'));
-    });
-  });
-
-  // ─── VirtualInstance Tests ──────────────────────────────────────────
-
-  group('VirtualInstance', () {
-    test('storageSizeFormatted formats bytes correctly', () {
-      final small = VirtualInstance(
-        id: 'test', packageName: 'com.test', appName: 'Test',
-        instanceIndex: 1, customName: 'Test Clone',
-        status: InstanceStatus.idle, storageSizeBytes: 500,
-        createdAt: DateTime.now(),
-      );
-      expect(small.storageSizeFormatted, '500 B');
-
-      final kb = small.copyWith(storageSizeBytes: 2048);
-      expect(kb.storageSizeFormatted, '2.0 KB');
-    });
-
-    test('copyWith preserves identity', () {
-      final original = VirtualInstance(
-        id: 'test', packageName: 'com.test', appName: 'Test',
-        instanceIndex: 1, customName: 'Test Clone',
-        status: InstanceStatus.idle, storageSizeBytes: 0,
-        createdAt: DateTime(2024, 1, 1),
-      );
-      final renamed = original.copyWith(customName: 'New Name');
-      expect(renamed.id, original.id);
-      expect(renamed.customName, 'New Name');
-      expect(renamed.packageName, original.packageName);
     });
   });
 }

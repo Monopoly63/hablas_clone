@@ -9,8 +9,6 @@ import 'core/native_bridge/work_profile_bridge.dart';
 import 'core/persistence/instance_persistence_service.dart';
 import 'core/cache/app_cache_service.dart';
 import 'core/permissions/permission_gate.dart';
-import 'core/services/app_state_service.dart';
-import 'core/services/security_service.dart';
 import 'core/l10n/localization_service.dart';
 import 'features/app_picker/domain/app_picker_repository.dart';
 import 'features/auth/domain/auth_repository.dart';
@@ -19,17 +17,10 @@ import 'features/auth/presentation/screens/lock_screen.dart';
 import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'core/services/app_state_service.dart';
+import 'features/stealth/stealth_mode_service.dart';
+import 'features/export_import/data_transfer_service.dart';
 
-/// ─── Hablas Clone v2.0.0 — Production-Grade App Cloning Platform ────
-///
-/// KEY FIXES vs v1.x:
-///   1. App state is NOW persisted (SharedPreferences) — no restart from zero
-///   2. Onboarding/Permissions/Lock phases are SKIPPED if already completed
-///   3. SecurityService replaces AuthRepository with multi-layer security
-///   4. All DI services are Singleton — no Factory for repositories
-///   5. Hive initialization happens BEFORE any UI renders
-///   6. Dashboard loads persisted instances on startup
-///
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -48,11 +39,10 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Initialize Hive FIRST — must be ready before any persistence operations
+  // Initialize Hive
   await Hive.initFlutter();
 
   // Initialize DI container (all services, persistence, repositories)
-  // This also initializes SharedPreferences, InstancePersistenceService, etc.
   await initializeDependencies();
 
   runApp(const HablasCloneApp());
@@ -64,8 +54,6 @@ class HablasCloneApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final loc = sl<LocalizationService>();
-    final appState = sl<AppStateService>();
-    final security = sl<SecurityService>();
 
     return MultiRepositoryProvider(
       providers: [
@@ -76,8 +64,8 @@ class HablasCloneApp extends StatelessWidget {
         RepositoryProvider<AppPickerRepository>(create: (_) => sl<AppPickerRepository>()),
         RepositoryProvider<AuthRepository>(create: (_) => sl<AuthRepository>()),
         RepositoryProvider<LocalizationService>.value(value: loc),
-        RepositoryProvider<AppStateService>.value(value: appState),
-        RepositoryProvider<SecurityService>.value(value: security),
+        RepositoryProvider<StealthModeService>(create: (_) => sl<StealthModeService>()),
+        RepositoryProvider<DataTransferService>(create: (_) => sl<DataTransferService>()),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -88,95 +76,74 @@ class HablasCloneApp extends StatelessWidget {
           title: 'Hablas Clone',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.buildDarkTheme(),
+          // RTL support for Arabic
           locale: loc.currentLocale,
           supportedLocales: const [Locale('ar'), Locale('en')],
-          localizationsDelegates: [],
+          localizationsDelegates: [], // Using custom LocalizationService
           builder: (context, child) {
+            // Apply RTL direction for Arabic
             return Directionality(
               textDirection: loc.textDirection,
               child: child!,
             );
           },
-          home: const _SmartAppEntry(),
+          home: const _AppEntry(),
         ),
       ),
     );
   }
 }
 
-/// ─── Smart App Entry — Automatically skips completed phases ──────────
-///
-/// CRITICAL FIX: v1.x always started from onboarding because there was
-/// NO state persistence. v2.0.0 uses AppStateService to determine
-/// the initial phase and skip completed steps.
-///
-/// Flow: AppStateService.initialPhase →
-///   onboarding → permissions → lock → dashboard
-///   (skip any completed phase)
-///
-class _SmartAppEntry extends StatefulWidget {
-  const _SmartAppEntry();
+/// Entry point — Smart phase skip based on persisted state
+class _AppEntry extends StatefulWidget {
+  const _AppEntry();
 
   @override
-  State<_SmartAppEntry> createState() => _SmartAppEntryState();
+  State<_AppEntry> createState() => _AppEntryState();
 }
 
-class _SmartAppEntryState extends State<_SmartAppEntry> {
-  /// Current phase — initialized from persisted state
-  AppPhase _phase = AppPhase.onboarding;
+class _AppEntryState extends State<_AppEntry> {
+  _AppPhase _phase = _AppPhase.onboarding;
 
   @override
   void initState() {
     super.initState();
-    // Determine initial phase from persisted state
+    // Skip completed phases based on persisted state
     final appState = sl<AppStateService>();
-    _phase = appState.initialPhase;
-
-    // If starting at dashboard, load persisted instances
-    if (_phase == AppPhase.dashboard) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          context.read<DashboardBloc>().add(LoadDashboard());
-        }
-      });
-    }
-  }
-
-  /// Advance to next phase, persisting each completed step.
-  void _advancePhase(AppPhase nextPhase) {
-    setState(() => _phase = nextPhase);
-
-    // Load instances when reaching dashboard
-    if (nextPhase == AppPhase.dashboard) {
-      context.read<DashboardBloc>().add(LoadDashboard());
+    if (appState.isOnboardingCompleted) {
+      if (appState.arePermissionsGranted) {
+        _phase = _AppPhase.dashboard;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.read<DashboardBloc>().add(LoadDashboard());
+        });
+      } else {
+        _phase = _AppPhase.permissions;
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return switch (_phase) {
-      AppPhase.onboarding => OnboardingScreen(
+      _AppPhase.onboarding => OnboardingScreen(
           onComplete: () {
-            // Persist: onboarding done
             sl<AppStateService>().setOnboardingCompleted();
-            _advancePhase(AppPhase.permissions);
+            setState(() => _phase = _AppPhase.permissions);
           },
         ),
-      AppPhase.permissions => PermissionGate(
+      _AppPhase.permissions => PermissionGate(
           onGranted: () {
-            // Persist: permissions granted
             sl<AppStateService>().setPermissionsGranted();
-            // Check if lock is needed
-            final lockNeeded = sl<AppStateService>().isLockEnabled;
-            _advancePhase(lockNeeded ? AppPhase.lock : AppPhase.dashboard);
+            setState(() => _phase = _AppPhase.dashboard);
+            context.read<DashboardBloc>().add(LoadDashboard());
           },
         ),
-      AppPhase.lock => LockScreen(
-          onUnlocked: () {
-            _advancePhase(AppPhase.dashboard);
-          },
+      _AppPhase.lock => LockScreen(
+          onUnlocked: () => setState(() => _phase = _AppPhase.dashboard),
         ),
-      AppPhase.dashboard => const DashboardScreen(),
+      _AppPhase.dashboard => const DashboardScreen(),
     };
   }
 }
+
+enum _AppPhase { onboarding, permissions, lock, dashboard }
