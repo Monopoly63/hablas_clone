@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
-import '../../core/error/result.dart';
-import '../../core/error/app_error.dart';
+import '../../../core/error/result.dart';
+import '../../../core/error/app_error.dart';
 
 /// ─── Stealth Mode — Hide clones from launcher ────────────────────
 ///

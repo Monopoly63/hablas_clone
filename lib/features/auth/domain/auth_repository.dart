@@ -1,6 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
-import '../../core/error/result.dart';
+import '../../../core/error/result.dart';
 
 /// ─── Auth Repository — PIN/Biometric security lock ────────────────
 ///
