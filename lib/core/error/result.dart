@@ -1,112 +1,79 @@
-/// ─── Result Type — Type-safe success/error handling ────────────────
+/// ─── Result Type — Simple success/error handling ──────────────────
 ///
-/// v2.0.0 FIX: Changed from `sealed class` to `abstract class` because
-/// `sealed class` with pattern matching caused AOT compilation failures.
-/// This simpler implementation is compatible with all Dart SDK versions
-/// and all compilation modes (JIT, AOT, release).
+/// MAXIMUM COMPATIBILITY: Uses only simple boolean flag + data/error.
+/// No sealed classes, no pattern matching, no type switching.
+/// Works in ALL compilation modes: JIT, AOT, release, debug.
 ///
 library;
 
 import 'app_error.dart';
 
-/// Type-safe result that represents either success (data) or failure (error).
-abstract class Result<T> {
-  const Result();
+/// Simple result type that represents either success or failure.
+class Result<T> {
+  final bool _isSuccess;
+  final T? _data;
+  final AppError? _error;
+
+  const Result._({required bool isSuccess, T? data, AppError? error})
+      : _isSuccess = isSuccess, _data = data, _error = error;
 
   /// Whether this result represents a successful outcome.
-  bool get isSuccess => this is Success<T>;
+  bool get isSuccess => _isSuccess;
 
   /// Whether this result represents a failure.
-  bool get isError => this is Failure<T>;
+  bool get isError => !_isSuccess;
 
   /// The data if success, null if failure.
-  T? get data {
-    if (this is Success<T>) {
-      return (this as Success<T>).data;
-    }
-    return null;
-  }
+  T? get data => _data;
 
   /// The error if failure, null if success.
-  AppError? get error {
-    if (this is Failure<T>) {
-      return (this as Failure<T>).error;
-    }
-    return null;
-  }
+  AppError? get error => _error;
 
   /// Transform data on success, propagate error on failure.
   Result<R> map<R>(R Function(T data) transform) {
-    if (this is Success<T>) {
-      return Success<R>(transform((this as Success<T>).data));
+    if (_isSuccess && _data != null) {
+      return Result._(isSuccess: true, data: transform(_data!));
     }
-    return Failure<R>((this as Failure<T>).error);
-  }
-
-  /// Execute action on success.
-  Result<T> onSuccess(void Function(T data) action) {
-    if (isSuccess && data != null) action(data as T);
-    return this;
-  }
-
-  /// Execute action on failure.
-  Result<T> onError(void Function(AppError error) action) {
-    if (isError && error != null) action(error!);
-    return this;
+    return Result._(isSuccess: false, error: _error);
   }
 
   /// Get data or throw error.
   T getOrThrow() {
-    if (this is Success<T>) return (this as Success<T>).data;
-    throw (this as Failure<T>).error;
+    if (_isSuccess) return _data!;
+    throw _error ?? AppError.unknown('Unknown error');
   }
 
   /// Get data or fallback value.
-  T getOrDefault(T defaultValue) => data ?? defaultValue;
+  T getOrDefault(T defaultValue) => _data ?? defaultValue;
 
   /// Factory: Create success result.
-  static Result<T> ok<T>(T data) => Success(data);
+  static Result<T> ok<T>(T data) => Result._(isSuccess: true, data: data);
 
   /// Factory: Create failure result.
-  static Result<T> fail<T>(AppError error) => Failure<T>(error);
+  static Result<T> fail<T>(AppError error) => Result._(isSuccess: false, error: error);
 
   /// Factory: Wrap a try-catch block.
   static Result<T> guard<T>(T Function() fn) {
     try {
-      return Success(fn());
+      return Result._(isSuccess: true, data: fn());
     } on AppError catch (e) {
-      return Failure<T>(e);
+      return Result._(isSuccess: false, error: e);
     } catch (e) {
-      return Failure<T>(AppError.unknown(e.toString()));
+      return Result._(isSuccess: false, error: AppError.unknown(e.toString()));
     }
   }
 
   /// Factory: Wrap an async try-catch block.
   static Future<Result<T>> guardAsync<T>(Future<T> Function() fn) async {
     try {
-      return Success(await fn());
+      return Result._(isSuccess: true, data: await fn());
     } on AppError catch (e) {
-      return Failure<T>(e);
+      return Result._(isSuccess: false, error: e);
     } catch (e) {
-      return Failure<T>(AppError.unknown(e.toString()));
+      return Result._(isSuccess: false, error: AppError.unknown(e.toString()));
     }
   }
-}
-
-/// Success result containing data.
-class Success<T> extends Result<T> {
-  final T data;
-  const Success(this.data);
 
   @override
-  String toString() => 'Success($data)';
-}
-
-/// Failure result containing error.
-class Failure<T> extends Result<T> {
-  final AppError error;
-  const Failure(this.error);
-
-  @override
-  String toString() => 'Failure($error)';
+  String toString() => _isSuccess ? 'Success($_data)' : 'Failure($_error)';
 }
